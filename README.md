@@ -38,6 +38,9 @@ func main() {
     // Apply filters from request
     builder.ApplyFilter("name", "john")
     
+    // Counting the number of lines for pagination
+    rowsCount := builder.BuildCount()
+
     // Build query
     result := builder.BuildSelect()
     sql, args := result.SQL, result.Args
