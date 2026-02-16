@@ -49,11 +49,7 @@ func (b *SQLBuilder) BuildSelect() (string, []any, error) {
 
 	// Добавляем сортировку
 	if b.sort.Field != "" {
-		sortField := b.sort.Field
-		if mapped, ok := b.sortMapping[b.sort.Field]; ok {
-			sortField = mapped
-		}
-		selectBuilder = selectBuilder.OrderBy(sortField + " " + b.sort.Order)
+		selectBuilder = selectBuilder.OrderBy(b.sort.Field + " " + b.sort.Order)
 	}
 
 	// Добавляем пагинацию
@@ -84,7 +80,6 @@ func (b *SQLBuilder) Clone() *SQLBuilder {
 		estimateTable:   b.estimateTable,
 		fields:          append([]string{}, b.fields...),
 		joins:           append([]joinConfig{}, b.joins...),
-		sortMapping:     b.sortMapping,
 		placeholder:     b.placeholder,
 		whereConditions: []squirrel.Sqlizer{},
 		sort:            SortConfig{},

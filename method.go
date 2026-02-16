@@ -212,14 +212,6 @@ func (b *SQLBuilder) And(conditions ...squirrel.Sqlizer) *SQLBuilder {
 
 // ============= МЕТОДЫ ДЛЯ СОРТИРОВКИ И ПАГИНАЦИИ =============
 
-// WithSortMapping добавляет маппинг полей сортировки
-func (b *SQLBuilder) WithSortMapping(mapping map[string]string) *SQLBuilder {
-	for k, v := range mapping {
-		b.sortMapping[k] = v
-	}
-	return b
-}
-
 // Sort устанавливает сортировку
 func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
 	b.sort = SortConfig{Field: b.mapField(field), Order: order}
@@ -274,7 +266,7 @@ func (b *SQLBuilder) WithFieldConfig(field string, dbField string, op Op) *SQLBu
 	return b
 }
 
-// ApplyFilter применяет фильтр
+// ApplyFilter применяет фильтр. Удобно использовать для установки фильтров в цикле
 func (b *SQLBuilder) ApplyFilter(field string, value string) *SQLBuilder {
 	if value == "" {
 		return b

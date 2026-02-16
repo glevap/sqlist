@@ -28,7 +28,6 @@ type (
 		estimateTable string
 		fields        []string
 		joins         []joinConfig
-		sortMapping   map[string]string
 		placeholder   sq.PlaceholderFormat
 		fieldConfigs  map[string]FieldConfig
 
@@ -87,7 +86,6 @@ func NewSQLBuilder() *SQLBuilder {
 	return &SQLBuilder{
 		fields:          []string{},
 		joins:           []joinConfig{},
-		sortMapping:     make(map[string]string),
 		whereConditions: []sq.Sqlizer{},
 		placeholder:     sq.Dollar, // по умолчанию PostgreSQL
 		limit:           7,

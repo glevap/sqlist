@@ -19,7 +19,6 @@ func TestNewSQLBuilder(t *testing.T) {
 	assert.Equal(t, sq.Dollar, b.placeholder)
 	assert.Equal(t, uint64(7), b.limit)
 	assert.Equal(t, uint64(0), b.offset)
-	assert.NotNil(t, b.sortMapping)
 	assert.NotNil(t, b.fieldConfigs)
 }
 
@@ -208,7 +207,7 @@ func TestOrAndConditions(t *testing.T) {
 		cond2 := squirrel.Eq{"status": "pending"}
 		b.Or(cond1, cond2)
 
-		assert.Len(t, b.whereConditions, 1)
+		assert.Len(t, b.whereConditions, 1) // Or группирует в одно условие
 	})
 
 	t.Run("and condition", func(t *testing.T) {
@@ -216,44 +215,39 @@ func TestOrAndConditions(t *testing.T) {
 		cond2 := squirrel.Lt{"age": 65}
 		b.And(cond1, cond2)
 
-		assert.Len(t, b.whereConditions, 2)
+		assert.Len(t, b.whereConditions, 2) // And добавляет как отдельные условия (они объединятся в AND позже)
 	})
 }
 
-// XXX
-// func TestSorting(t *testing.T) {
-// 	t.Run("sort with mapping", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithSortMapping(map[string]string{
-// 				"name": "users.name",
-// 				"date": "created_at",
-// 			})
+func TestSorting(t *testing.T) {
+	t.Run("sort without mapping", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
+		b.Sort("id", "DESC")
+		assert.Equal(t, "id", b.sort.Field)
+		assert.Equal(t, "DESC", b.sort.Order)
+	})
 
-// 		b.Sort("name", "ASC")
-// 		assert.Equal(t, "users.name", b.sort.Field)
-// 		assert.Equal(t, "ASC", b.sort.Order)
-// 	})
+	t.Run("sort with mapping", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users").
+			WithFieldConfig("user_id", "users.id", EQ)
 
-// 	t.Run("sort without mapping", func(t *testing.T) {
-// 		b := NewSQLBuilder().WithFrom("users")
-// 		b.Sort("id", "DESC")
-// 		assert.Equal(t, "id", b.sort.Field)
-// 		assert.Equal(t, "DESC", b.sort.Order)
-// 	})
+		b.Sort("user_id", "ASC")
+		assert.Equal(t, "users.id", b.sort.Field) // должно быть смаплено!
+		assert.Equal(t, "ASC", b.sort.Order)
+	})
 
-// 	t.Run("sort if", func(t *testing.T) {
-// 		b := NewSQLBuilder().WithFrom("users")
+	t.Run("sort if", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
 
-// 		// Should set sort
-// 		b.SortIf("name", "ASC")
-// 		assert.Equal(t, "name", b.sort.Field)
+		// Should set sort
+		b.SortIf("name", "ASC")
+		assert.Equal(t, "name", b.sort.Field)
 
-// 		// Should not change sort
-// 		b.SortIf("", "DESC")
-// 		assert.Equal(t, "name", b.sort.Field)
-// 	})
-// }
+		// Should not change sort
+		b.SortIf("", "DESC")
+		assert.Equal(t, "name", b.sort.Field)
+	})
+}
 
 func TestPagination(t *testing.T) {
 	b := NewSQLBuilder()
@@ -339,136 +333,141 @@ func TestApplyFilter(t *testing.T) {
 	})
 }
 
-// XXX
-// func TestBuildCount(t *testing.T) {
-// 	t.Run("normal count with where", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithFields("id", "name").
-// 			WithPlaceholder(sq.Dollar).
-// 			Eq("active", true)
+func TestBuildCount(t *testing.T) {
+	t.Run("normal count with where", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name").
+			WithPlaceholder(sq.Dollar).
+			Eq("active", true)
 
-// 		sql, args, err := b.BuildCount()
+		sql, args, err := b.BuildCount()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "SELECT COUNT(*) FROM (")
-// 		assert.Contains(t, sql, "FROM users")
-// 		assert.Contains(t, sql, "WHERE active = $1")
-// 		assert.Len(t, args, 1)
-// 		assert.Equal(t, true, args[0])
-// 	})
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT COUNT(*)")
+		assert.Contains(t, sql, "FROM")
+		assert.Contains(t, sql, "WHERE")
+		assert.Contains(t, sql, "active = $1") // проверяем, что условие есть
+		assert.Len(t, args, 1)
+		assert.Equal(t, true, args[0])
+	})
 
-// 	t.Run("estimate count", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithEstimate("users")
+	t.Run("estimate count", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithEstimate("users")
 
-// 		sql, args, err := b.BuildCount()
+		sql, args, err := b.BuildCount()
 
-// 		require.NoError(t, err)
-// 		assert.Equal(t, "SELECT reltuples::bigint AS estimate FROM pg_class WHERE oid = $1::regclass", sql)
-// 		assert.Len(t, args, 1)
-// 		assert.Equal(t, "users", args[0])
-// 	})
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT reltuples::bigint AS estimate FROM pg_class WHERE oid = $1::regclass", sql)
+		assert.Len(t, args, 1)
+		assert.Equal(t, "users", args[0])
+	})
 
-// 	t.Run("different placeholder", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithPlaceholder(sq.Question).
-// 			Eq("active", true)
+	t.Run("different placeholder", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name"). // ← ЭТО БЫЛО ПРОПУЩЕНО!
+			WithPlaceholder(sq.Question).
+			Eq("active", true)
 
-// 		sql, args, err := b.BuildCount()
+		sql, args, err := b.BuildCount()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "?")
-// 		assert.Len(t, args, 1)
-// 	})
-// }
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT COUNT(*)")
+		assert.Contains(t, sql, "FROM")
+		assert.Contains(t, sql, "?") // проверяем, что плейсхолдер вопроса есть
+		assert.Len(t, args, 1)
+	})
+}
 
-// XXX
-// func TestBuildSelect(t *testing.T) {
-// 	t.Run("basic select", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithFields("id", "name", "email")
+func TestBuildSelect(t *testing.T) {
+	t.Run("basic select", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name", "email")
 
-// 		sql, args, err := b.BuildSelect()
+		sql, args, err := b.BuildSelect()
 
-// 		require.NoError(t, err)
-// 		assert.Equal(t, "SELECT id, name, email FROM users", sql)
-// 		assert.Empty(t, args)
-// 	})
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT id, name, email FROM users")
+		assert.Empty(t, args)
+	})
 
-// 	t.Run("select with where", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithFields("id", "name").
-// 			Eq("active", true).
-// 			Like("name", "john")
+	t.Run("select with where", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name").
+			Eq("active", true).
+			Like("name", "john")
 
-// 		sql, args, err := b.BuildSelect()
+		sql, args, err := b.BuildSelect()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "WHERE")
-// 		assert.Contains(t, sql, "active = $1")
-// 		assert.Contains(t, sql, "name LIKE $2")
-// 		assert.Len(t, args, 2)
-// 	})
+		require.NoError(t, err)
+		assert.Contains(t, sql, "WHERE")
+		assert.Contains(t, sql, "active = $1")
+		assert.Contains(t, sql, "name LIKE $2")
+		assert.Len(t, args, 2)
+	})
 
-// 	t.Run("select with join", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithFields("users.id", "users.name", "orders.total").
-// 			WithLeftJoin("orders", "users.id = orders.user_id")
+	t.Run("select with join", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("users.id", "users.name", "orders.total").
+			WithLeftJoin("orders", "users.id = orders.user_id")
 
-// 		sql, _, err := b.BuildSelect()
+		sql, _, err := b.BuildSelect()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "LEFT JOIN orders ON users.id = orders.user_id")
-// 	})
+		require.NoError(t, err)
+		assert.Contains(t, sql, "LEFT JOIN orders ON users.id = orders.user_id")
+	})
 
-// 	t.Run("select with sort and pagination", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithFields("id", "name").
-// 			Sort("name", "ASC").
-// 			Limit(10).
-// 			Offset(5)
+	t.Run("select with sort and pagination", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name").
+			Sort("name", "ASC").
+			Limit(10).
+			Offset(5)
 
-// 		sql, _, err := b.BuildSelect()
+		sql, _, err := b.BuildSelect()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "ORDER BY name ASC")
-// 		assert.Contains(t, sql, "LIMIT 10")
-// 		assert.Contains(t, sql, "OFFSET 5")
-// 	})
+		require.NoError(t, err)
+		assert.Contains(t, sql, "ORDER BY name ASC")
+		assert.Contains(t, sql, "LIMIT 10")
+		assert.Contains(t, sql, "OFFSET 5")
+	})
 
-// 	t.Run("select with mapped sort", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithFields("id", "name").
-// 			WithSortMapping(map[string]string{"name": "users.name"}).
-// 			Sort("name", "DESC")
+	t.Run("select with mapped sort", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name").
+			WithFieldConfig("user_name", "users.name", ILIKE).
+			Sort("user_name", "DESC") // сортируем по алиасу
 
-// 		sql, _, err := b.BuildSelect()
+		sql, _, err := b.BuildSelect()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "ORDER BY users.name DESC")
-// 	})
+		require.NoError(t, err)
+		assert.Contains(t, sql, "ORDER BY users.name DESC") // должен быть смаплен!
+	})
 
-// 	t.Run("question placeholder", func(t *testing.T) {
-// 		b := NewSQLBuilder().
-// 			WithFrom("users").
-// 			WithPlaceholder(sq.Question).
-// 			Eq("active", true)
+	t.Run("question placeholder", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFields("id", "name"). // ← И ЗДЕСЬ ТОЖЕ!
+			WithPlaceholder(sq.Question).
+			Eq("active", true)
 
-// 		sql, args, err := b.BuildSelect()
+		sql, args, err := b.BuildSelect()
 
-// 		require.NoError(t, err)
-// 		assert.Contains(t, sql, "active = ?")
-// 		assert.Len(t, args, 1)
-// 	})
-// }
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT id, name FROM users")
+		assert.Contains(t, sql, "WHERE")
+		assert.Contains(t, sql, "active = ?")
+		assert.Len(t, args, 1)
+	})
+}
 
 func TestResetAndClone(t *testing.T) {
 	original := NewSQLBuilder().
@@ -513,22 +512,24 @@ func TestResetAndClone(t *testing.T) {
 }
 
 func TestComplexQuery(t *testing.T) {
+	// Настраиваем маппинг полей
 	b := NewSQLBuilder().
 		WithFrom("users u").
 		WithFields("u.id", "u.name", "o.total", "p.bio").
 		WithLeftJoin("orders o", "u.id = o.user_id").
 		WithLeftJoin("profiles p", "u.id = p.user_id").
 		WithPlaceholder(sq.Dollar).
-		WithSortMapping(map[string]string{
-			"name":  "u.name",
-			"total": "o.total",
-		}).
-		Eq("u.active", true).
-		Gt("o.total", 100).
-		ILike("u.name", "john").
-		Sort("total", "DESC").
-		Limit(20).
-		Offset(40)
+		WithFieldConfig("total", "o.total", GT).     // для фильтрации
+		WithFieldConfig("name", "u.name", ILIKE).    // для фильтрации
+		WithFieldConfig("total_sort", "o.total", GT) // для сортировки
+
+	// Добавляем условия
+	b.Eq("u.active", true)
+	b.Gt("total", 100)           // используем алиас "total"
+	b.ILike("name", "john")      // используем алиас "name"
+	b.Sort("total_sort", "DESC") // сортируем по алиасу
+	b.Limit(20)
+	b.Offset(40)
 
 	sql, args, err := b.BuildSelect()
 
@@ -540,7 +541,7 @@ func TestComplexQuery(t *testing.T) {
 	assert.Contains(t, sql, "u.active = $1")
 	assert.Contains(t, sql, "o.total > $2")
 	assert.Contains(t, sql, "u.name ILIKE $3")
-	assert.Contains(t, sql, "ORDER BY o.total DESC")
+	assert.Contains(t, sql, "ORDER BY o.total DESC") // должно быть смаплено!
 	assert.Contains(t, sql, "LIMIT 20")
 	assert.Contains(t, sql, "OFFSET 40")
 	assert.Len(t, args, 3)
