@@ -69,14 +69,15 @@ type (
 )
 
 const (
-	EQ     Op = "eq"    // =
-	NOT_EQ Op = "neq"   // !=
-	LIKE   Op = "like"  // like
-	ILIKE  Op = "ilike" // ilike
-	GT     Op = "gt"    // >
-	LT     Op = "lt"    // <
-	GTE    Op = "gte"   // >=
-	LTE    Op = "lte"   // <=
+	EQ      Op = "eq"    // =
+	NOT_EQ  Op = "neq"   // !=
+	LIKE    Op = "like"  // like
+	ILIKE   Op = "ilike" // ilike
+	GT      Op = "gt"    // >
+	LT      Op = "lt"    // <
+	GTE     Op = "gte"   // >=
+	LTE     Op = "lte"   // <=
+	EXPR_EQ Op = "expr"  // just expression
 )
 
 // ============= КОНСТРУКТОР =============

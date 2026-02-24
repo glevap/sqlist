@@ -210,6 +210,22 @@ func (b *SQLBuilder) And(conditions ...squirrel.Sqlizer) *SQLBuilder {
 	return b
 }
 
+// ExprEq добавляет условие с функцией с правой стороны
+// Пример: persons.snils2bcd64(snils) = persons.snils2bcd64('111-111-111 11')
+func (b *SQLBuilder) ExprEq(leftField, rightExpr string, args ...interface{}) *SQLBuilder {
+	if len(args) == 0 {
+		// если нет аргументов, используем выражение как есть
+		b.whereConditions = append(b.whereConditions,
+			squirrel.Expr(leftField+" = "+rightExpr))
+	} else {
+		// если есть аргументы, передаём их в выражение
+		fullExpr := leftField + " = " + rightExpr
+		b.whereConditions = append(b.whereConditions,
+			squirrel.Expr(fullExpr, args...))
+	}
+	return b
+}
+
 // ============= МЕТОДЫ ДЛЯ СОРТИРОВКИ И ПАГИНАЦИИ =============
 
 // Sort устанавливает сортировку
@@ -272,6 +288,11 @@ func (b *SQLBuilder) ApplyFilter(field string, value string) *SQLBuilder {
 		return b
 	}
 
+	/*
+		todo:
+		странный мув: если настроек поля нет, то ничего не делаем
+		если мои build-методы возвращают sql, args, err, то, можно писать ошибку!!!
+	*/
 	cfg, ok := b.fieldConfigs[field]
 	if !ok {
 		return b
@@ -305,4 +326,25 @@ func (b *SQLBuilder) mapField(alias string) string {
 		return cfg.DBField
 	}
 	return alias // если не нашли, возвращаем как есть
+}
+
+func (b *SQLBuilder) ApplyExpr(field string, value string, args ...any) *SQLBuilder {
+	if value == "" {
+		return b
+	}
+
+	cfg, ok := b.fieldConfigs[field]
+	if !ok {
+		return b
+	}
+
+	/*
+		todo:
+		если не типы EXPR_{action}, то проксируем обращение
+	*/
+	if cfg.Operator != EXPR_EQ {
+		return b.ApplyFilter(field, value)
+	}
+
+	return b.ExprEq(cfg.DBField, value, args...)
 }

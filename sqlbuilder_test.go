@@ -546,3 +546,39 @@ func TestComplexQuery(t *testing.T) {
 	assert.Contains(t, sql, "OFFSET 40")
 	assert.Len(t, args, 3)
 }
+
+func TestApplyExpr(t *testing.T) {
+	b := NewSQLBuilder().WithFrom("users")
+
+	t.Run("apply expression", func(t *testing.T) {
+		b.WithFieldConfig("snils", "toINT(snils)", EXPR_EQ)
+
+		b.ApplyExpr("snils", "toINT(?)", 10)
+
+		assert.Len(t, b.whereConditions, 1)
+
+		sql, args, err := b.whereConditions[0].ToSql()
+
+		assert.NoError(t, err)
+
+		assert.Equal(t, "toINT(snils) = toINT(?)", sql)
+
+		assert.Equal(t, []any{10}, args)
+	})
+
+	t.Run("apply expression with no EXPR_EQ", func(t *testing.T) {
+		b.WithFieldConfig("snils", "toINT(snils)", EQ)
+
+		b.ApplyExpr("snils", "toINT(?)", 10)
+
+		assert.Len(t, b.whereConditions, 1)
+
+		sql, args, err := b.whereConditions[0].ToSql()
+
+		assert.NoError(t, err)
+
+		assert.Equal(t, "toINT(snils) = ?", sql)
+
+		assert.Equal(t, []any{10}, args)
+	})
+}
