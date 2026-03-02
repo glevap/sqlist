@@ -36,11 +36,15 @@ type (
 		sort            SortConfig
 		limit           uint64
 		offset          uint64
+
+		// приоритетность полей по их именам: 0 - самый приоритетный
+		priority      []string
+		pendingFilter []pendingFilter
 	}
 
-	// FieldConfig описывает как обрабатывать поле
+	// FieldConfig описывает, как обрабатывать поле
 	FieldConfig struct {
-		DBField  string // поле в БД
+		DBField  string // имя поля в БД
 		Operator Op     // "eq", "like", "ilike", "gt", "lt"
 	}
 
@@ -50,6 +54,15 @@ type (
 		Table     string
 		Condition string
 		Args      interface{}
+	}
+
+	// namedConditon сохраняет условие фильтрации с именем поля
+	// для последующей приоритизации порядка полей в WHERE секции
+	// финального запроса
+	pendingFilter struct {
+		FieldConfig
+		Value any
+		Args  []any
 	}
 
 	// SortConfig сортировка
@@ -69,28 +82,29 @@ type (
 )
 
 const (
-	EQ      Op = "eq"    // =
-	NOT_EQ  Op = "neq"   // !=
-	LIKE    Op = "like"  // like
-	ILIKE   Op = "ilike" // ilike
-	GT      Op = "gt"    // >
-	LT      Op = "lt"    // <
-	GTE     Op = "gte"   // >=
-	LTE     Op = "lte"   // <=
-	EXPR_EQ Op = "expr"  // just expression
+	EQ      Op = "eq"      // =
+	NOT_EQ  Op = "neq"     // !=
+	LIKE    Op = "like"    // like
+	ILIKE   Op = "ilike"   // ilike
+	GT      Op = "gt"      // >
+	LT      Op = "lt"      // <
+	GTE     Op = "gte"     // >=
+	LTE     Op = "lte"     // <=
+	EXPR    Op = "expr"    // expression
+	EXPR_EQ Op = "expr_eq" // expression equal (specified)
 )
-
-// ============= КОНСТРУКТОР =============
 
 // NewSQLBuilder создает новый билдер с squirrel
 func NewSQLBuilder() *SQLBuilder {
 	return &SQLBuilder{
 		fields:          []string{},
-		joins:           []joinConfig{},
-		whereConditions: []sq.Sqlizer{},
 		placeholder:     sq.Dollar, // по умолчанию PostgreSQL
+		fieldConfigs:    make(map[string]FieldConfig),
+		whereConditions: []sq.Sqlizer{},
+		joins:           []joinConfig{},
 		limit:           7,
 		offset:          0,
-		fieldConfigs:    make(map[string]FieldConfig),
+		priority:        []string{},
+		pendingFilter:   make([]pendingFilter, 0),
 	}
 }

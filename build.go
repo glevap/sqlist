@@ -20,11 +20,85 @@ func (b *SQLBuilder) buildBaseSelect() squirrel.SelectBuilder {
 	}
 
 	// Добавляем WHERE условия!
+	if len(b.pendingFilter) > 0 {
+		selectBuilder = selectBuilder.Where(squirrel.And(b.applyPriority()))
+	}
+
+	// добавляем оставшиеся сырые условия
 	if len(b.whereConditions) > 0 {
 		selectBuilder = selectBuilder.Where(squirrel.And(b.whereConditions))
 	}
 
 	return selectBuilder
+}
+
+func (b *SQLBuilder) toCondition(cfg pendingFilter) squirrel.Sqlizer {
+	switch cfg.Operator {
+	case EQ:
+		return squirrel.Eq{cfg.DBField: cfg.Value}
+	case NOT_EQ:
+		return squirrel.NotEq{cfg.DBField: cfg.Value}
+	case LIKE:
+		return squirrel.Like{cfg.DBField: cfg.Value}
+	case ILIKE:
+		return squirrel.ILike{cfg.DBField: cfg.Value}
+	case GT:
+		return squirrel.Gt{cfg.DBField: cfg.Value}
+	case LT:
+		return squirrel.Lt{cfg.DBField: cfg.Value}
+	case GTE:
+		return squirrel.GtOrEq{cfg.DBField: cfg.Value}
+	case LTE:
+		return squirrel.LtOrEq{cfg.DBField: cfg.Value}
+	case EXPR:
+		if expr, ok := cfg.Value.(string); ok {
+			return squirrel.Expr(expr, cfg.Args...)
+		}
+	case EXPR_EQ:
+		if expr, ok := cfg.Value.(string); ok {
+			fullExpr := cfg.DBField + " = " + expr
+			return squirrel.Expr(fullExpr, cfg.Args...)
+		}
+	}
+
+	// todo: нужно переработать данный вариант
+	// return nil
+
+	return squirrel.Eq{"1": "1"}
+}
+
+// возвращаем слайс Sqlizer-объектов, отсортированных по приоритетности
+func (b *SQLBuilder) applyPriority() []squirrel.Sqlizer {
+	filters := make(map[string]pendingFilter, len(b.pendingFilter))
+
+	for _, filter := range b.pendingFilter {
+		filters[filter.DBField] = filter
+	}
+
+	var prioritized []squirrel.Sqlizer
+
+	// если приоритетность не указана
+	if len(b.priority) == 0 {
+		for _, filter := range filters {
+			prioritized = append(prioritized, b.toCondition(filter))
+		}
+
+		return prioritized
+	}
+
+	for _, item := range b.priority {
+		item = b.mapField(item)
+		if filter, ok := filters[item]; ok {
+			prioritized = append(prioritized, b.toCondition(filter))
+			delete(filters, item)
+		}
+	}
+
+	for _, item := range filters {
+		prioritized = append(prioritized, b.toCondition(item))
+	}
+
+	return prioritized
 }
 
 // BuildCount строит запрос для подсчета

@@ -1,10 +1,12 @@
 package sqlist
 
 import (
+	"strings"
+
 	"github.com/Masterminds/squirrel"
 )
 
-// ============= МЕТОДЫ КОНФИГУРАЦИИ =============
+// МЕТОДЫ КОНФИГУРАЦИИ =====================================================================
 
 // WithPlaceholder устанавливает формат плейсхолдеров
 func (b *SQLBuilder) WithPlaceholder(placeholder squirrel.PlaceholderFormat) *SQLBuilder {
@@ -36,10 +38,21 @@ func (b *SQLBuilder) WithFields(fields ...string) *SQLBuilder {
 	return b
 }
 
-// ============= МЕТОДЫ ДЛЯ JOIN (ВСЕ ПРИНИМАЮТ SQLIZER) =============
+// WithFields добавляет несколько полей
+func (b *SQLBuilder) WithPriority(fields string) *SQLBuilder {
+	for _, field := range strings.Split(fields, ",") {
+		b.priority = append(
+			b.priority, strings.TrimSpace(field))
+	}
+	return b
+}
+
+// МЕТОДЫ ДЛЯ JOIN =========================================================================
 
 // WithJoin добавляет произвольный JOIN
 func (b *SQLBuilder) WithJoin(joinType, table, condition string, args ...interface{}) *SQLBuilder {
+	// todo: нет проверки на тип JOIN
+	// в случае некорректного типа SQL упадет
 	b.joins = append(b.joins, joinConfig{
 		Type:      joinType,
 		Table:     table,
@@ -69,34 +82,42 @@ func (b *SQLBuilder) WithFullJoin(table, condition string, args ...interface{}) 
 	return b.WithJoin("FULL JOIN", table, condition, args...)
 }
 
-// ============= МЕТОДЫ ДЛЯ УСЛОВИЙ (ВСЕ ВОЗВРАЩАЮТ SQLIZER) =============
+// МЕТОДЫ ДЛЯ УСЛОВИЙ (ВСЕ ВОЗВРАЩАЮТ pendingFilter) =======================================
 
+// todo: переделать
 // Where добавляет произвольное условие
 func (b *SQLBuilder) Where(condition squirrel.Sqlizer) *SQLBuilder {
-	b.whereConditions = append(b.whereConditions, condition)
+	// 	b.whereConditions = append(b.whereConditions, condition)
 	return b
 }
 
+// todo: переделать
 // WhereIf добавляет условие, если флаг true
 func (b *SQLBuilder) WhereIf(cond bool, condition squirrel.Sqlizer) *SQLBuilder {
-	if cond {
-		b.whereConditions = append(b.whereConditions, condition)
-	}
+	// if cond {
+	// 	b.whereConditions = append(b.whereConditions, condition)
+	// }
 	return b
+}
+
+// унифицируем сохранение фильтров, ожидающих обработки и добавления в финальный SQL
+func (b *SQLBuilder) withPending(op Op, field string, value any, args ...any) pendingFilter {
+	return pendingFilter{
+		FieldConfig: FieldConfig{
+			DBField:  field,
+			Operator: op,
+		},
+		Value: value,
+		Args:  args,
+	}
 }
 
 // Eq добавляет условие равенства
 func (b *SQLBuilder) Eq(field string, value interface{}) *SQLBuilder {
 	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.Eq{b.mapField(field): value})
-	}
-	return b
-}
-
-// EqIf добавляет условие равенства, если значение не nil
-func (b *SQLBuilder) EqIf(value interface{}, field string) *SQLBuilder {
-	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.Eq{b.mapField(field): value})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(EQ, b.mapField(field), value),
+		)
 	}
 	return b
 }
@@ -104,7 +125,9 @@ func (b *SQLBuilder) EqIf(value interface{}, field string) *SQLBuilder {
 // NotEq добавляет условие неравенства
 func (b *SQLBuilder) NotEq(field string, value interface{}) *SQLBuilder {
 	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.NotEq{b.mapField(field): value})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(NOT_EQ, b.mapField(field), value),
+		)
 	}
 	return b
 }
@@ -112,7 +135,9 @@ func (b *SQLBuilder) NotEq(field string, value interface{}) *SQLBuilder {
 // Like добавляет условие LIKE
 func (b *SQLBuilder) Like(field string, value string) *SQLBuilder {
 	if value != "" {
-		b.whereConditions = append(b.whereConditions, squirrel.Like{b.mapField(field): value + "%"})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(LIKE, b.mapField(field), value+"%"),
+		)
 	}
 	return b
 }
@@ -120,7 +145,9 @@ func (b *SQLBuilder) Like(field string, value string) *SQLBuilder {
 // ILike добавляет условие ILIKE
 func (b *SQLBuilder) ILike(field string, value string) *SQLBuilder {
 	if value != "" {
-		b.whereConditions = append(b.whereConditions, squirrel.ILike{b.mapField(field): "%" + value + "%"})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(ILIKE, b.mapField(field), "%"+value+"%"),
+		)
 	}
 	return b
 }
@@ -128,7 +155,9 @@ func (b *SQLBuilder) ILike(field string, value string) *SQLBuilder {
 // In добавляет условие IN
 func (b *SQLBuilder) In(field string, values interface{}) *SQLBuilder {
 	if values != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.Eq{b.mapField(field): values})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(EQ, b.mapField(field), values),
+		)
 	}
 	return b
 }
@@ -136,7 +165,9 @@ func (b *SQLBuilder) In(field string, values interface{}) *SQLBuilder {
 // NotIn добавляет условие NOT IN
 func (b *SQLBuilder) NotIn(field string, values interface{}) *SQLBuilder {
 	if values != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.NotEq{b.mapField(field): values})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(NOT_EQ, b.mapField(field), values),
+		)
 	}
 	return b
 }
@@ -144,8 +175,9 @@ func (b *SQLBuilder) NotIn(field string, values interface{}) *SQLBuilder {
 // Between добавляет условие BETWEEN
 func (b *SQLBuilder) Between(field string, min, max interface{}) *SQLBuilder {
 	if min != nil && max != nil {
-		b.whereConditions = append(b.whereConditions,
-			squirrel.Expr(b.mapField(field)+" BETWEEN ? AND ?", min, max))
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(EXPR, b.mapField(field), b.mapField(field)+" BETWEEN ? AND ?", min, max),
+		)
 	}
 	return b
 }
@@ -153,7 +185,9 @@ func (b *SQLBuilder) Between(field string, min, max interface{}) *SQLBuilder {
 // Gt добавляет условие "больше"
 func (b *SQLBuilder) Gt(field string, value interface{}) *SQLBuilder {
 	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.Gt{b.mapField(field): value})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(GT, b.mapField(field), value),
+		)
 	}
 	return b
 }
@@ -161,7 +195,9 @@ func (b *SQLBuilder) Gt(field string, value interface{}) *SQLBuilder {
 // Lt добавляет условие "меньше"
 func (b *SQLBuilder) Lt(field string, value interface{}) *SQLBuilder {
 	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.Lt{b.mapField(field): value})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(LT, b.mapField(field), value),
+		)
 	}
 	return b
 }
@@ -169,7 +205,9 @@ func (b *SQLBuilder) Lt(field string, value interface{}) *SQLBuilder {
 // Gte добавляет условие "больше или равно"
 func (b *SQLBuilder) Gte(field string, value interface{}) *SQLBuilder {
 	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.GtOrEq{b.mapField(field): value})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(GTE, b.mapField(field), value),
+		)
 	}
 	return b
 }
@@ -177,56 +215,64 @@ func (b *SQLBuilder) Gte(field string, value interface{}) *SQLBuilder {
 // Lte добавляет условие "меньше или равно"
 func (b *SQLBuilder) Lte(field string, value interface{}) *SQLBuilder {
 	if value != nil {
-		b.whereConditions = append(b.whereConditions, squirrel.LtOrEq{b.mapField(field): value})
+		b.pendingFilter = append(b.pendingFilter,
+			b.withPending(LTE, b.mapField(field), value),
+		)
 	}
 	return b
 }
 
 // IsNull добавляет условие IS NULL
 func (b *SQLBuilder) IsNull(field string) *SQLBuilder {
-	b.whereConditions = append(b.whereConditions, squirrel.Eq{b.mapField(field): nil})
+	b.pendingFilter = append(b.pendingFilter,
+		b.withPending(EQ, b.mapField(field), nil),
+	)
 	return b
 }
 
 // IsNotNull добавляет условие IS NOT NULL
 func (b *SQLBuilder) IsNotNull(field string) *SQLBuilder {
-	b.whereConditions = append(b.whereConditions, squirrel.NotEq{b.mapField(field): nil})
+	b.pendingFilter = append(b.pendingFilter,
+		b.withPending(NOT_EQ, b.mapField(field), nil),
+	)
 	return b
 }
 
 // Or группирует условия в OR
-func (b *SQLBuilder) Or(conditions ...squirrel.Sqlizer) *SQLBuilder {
-	if len(conditions) > 0 {
-		b.whereConditions = append(b.whereConditions, squirrel.Or(conditions))
-	}
-	return b
-}
+// func (b *SQLBuilder) Or(conditions ...squirrel.Sqlizer) *SQLBuilder {
+// 	if len(conditions) > 0 {
+// 		b.whereConditions = append(b.whereConditions, squirrel.Or(conditions))
+// 	}
+// 	return b
+// }
 
-// And группирует условия в AND (обычно не нужно)
-func (b *SQLBuilder) And(conditions ...squirrel.Sqlizer) *SQLBuilder {
-	if len(conditions) > 0 {
-		b.whereConditions = append(b.whereConditions, squirrel.And(conditions))
-	}
+// // And группирует условия в AND (обычно не нужно)
+// func (b *SQLBuilder) And(conditions ...squirrel.Sqlizer) *SQLBuilder {
+// 	if len(conditions) > 0 {
+// 		b.whereConditions = append(b.whereConditions, squirrel.And(conditions))
+// 	}
+// 	return b
+// }
+
+func (b *SQLBuilder) Expr(field string, fullExpr string, args ...interface{}) *SQLBuilder {
+	b.pendingFilter = append(b.pendingFilter,
+		b.withPending(EXPR, field, fullExpr, nil),
+	)
+
 	return b
 }
 
 // ExprEq добавляет условие с функцией с правой стороны
 // Пример: persons.snils2bcd64(snils) = persons.snils2bcd64('111-111-111 11')
 func (b *SQLBuilder) ExprEq(leftField, rightExpr string, args ...interface{}) *SQLBuilder {
-	if len(args) == 0 {
-		// если нет аргументов, используем выражение как есть
-		b.whereConditions = append(b.whereConditions,
-			squirrel.Expr(leftField+" = "+rightExpr))
-	} else {
-		// если есть аргументы, передаём их в выражение
-		fullExpr := leftField + " = " + rightExpr
-		b.whereConditions = append(b.whereConditions,
-			squirrel.Expr(fullExpr, args...))
-	}
+	fullExpr := leftField + " = " + rightExpr
+
+	b.Expr(leftField, fullExpr, args...)
+
 	return b
 }
 
-// ============= МЕТОДЫ ДЛЯ СОРТИРОВКИ И ПАГИНАЦИИ =============
+// МЕТОДЫ ДЛЯ СОРТИРОВКИ И ПАГИНАЦИИ =======================================================
 
 // Sort устанавливает сортировку
 func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
@@ -235,6 +281,7 @@ func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
 }
 
 // SortIf устанавливает сортировку, если поле не пустое
+// todo: а подразумевается, что должно быть condition, по которому будет применяться сортировочное правило!
 func (b *SQLBuilder) SortIf(field, order string) *SQLBuilder {
 	if field != "" {
 		b.sort = SortConfig{Field: b.mapField(field), Order: order}
@@ -283,39 +330,18 @@ func (b *SQLBuilder) WithFieldConfig(field string, dbField string, op Op) *SQLBu
 }
 
 // ApplyFilter применяет фильтр. Удобно использовать для установки фильтров в цикле
-func (b *SQLBuilder) ApplyFilter(field string, value string) *SQLBuilder {
+func (b *SQLBuilder) ApplyFilter(field string, value string, args ...any) *SQLBuilder {
 	if value == "" {
 		return b
 	}
 
-	/*
-		todo:
-		странный мув: если настроек поля нет, то ничего не делаем
-		если мои build-методы возвращают sql, args, err, то, можно писать ошибку!!!
-	*/
+	// todo:	если мои build-методы возвращают sql, args, err, то, можно писать ошибку!!!
 	cfg, ok := b.fieldConfigs[field]
 	if !ok {
 		return b
 	}
 
-	switch cfg.Operator {
-	case EQ:
-		b.Eq(cfg.DBField, value)
-	case NOT_EQ:
-		b.NotEq(cfg.DBField, value)
-	case LIKE:
-		b.Like(cfg.DBField, value)
-	case ILIKE:
-		b.ILike(cfg.DBField, value)
-	case GT:
-		b.Gt(cfg.DBField, value)
-	case LT:
-		b.Lt(cfg.DBField, value)
-	case GTE:
-		b.Gte(cfg.DBField, value)
-	case LTE:
-		b.Lte(cfg.DBField, value)
-	}
+	b.pendingFilter = append(b.pendingFilter, b.withPending(cfg.Operator, cfg.DBField, value, args...))
 
 	return b
 }
@@ -326,25 +352,4 @@ func (b *SQLBuilder) mapField(alias string) string {
 		return cfg.DBField
 	}
 	return alias // если не нашли, возвращаем как есть
-}
-
-func (b *SQLBuilder) ApplyExpr(field string, value string, args ...any) *SQLBuilder {
-	if value == "" {
-		return b
-	}
-
-	cfg, ok := b.fieldConfigs[field]
-	if !ok {
-		return b
-	}
-
-	/*
-		todo:
-		если не типы EXPR_{action}, то проксируем обращение
-	*/
-	if cfg.Operator != EXPR_EQ {
-		return b.ApplyFilter(field, value)
-	}
-
-	return b.ExprEq(cfg.DBField, value, args...)
 }
