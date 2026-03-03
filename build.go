@@ -34,14 +34,20 @@ func (b *SQLBuilder) buildBaseSelect() squirrel.SelectBuilder {
 
 func (b *SQLBuilder) toCondition(cfg pendingFilter) squirrel.Sqlizer {
 	switch cfg.Operator {
-	case EQ:
+	case EQ, IN:
 		return squirrel.Eq{cfg.DBField: cfg.Value}
-	case NOT_EQ:
+	case NOT_EQ, NOT_IN:
 		return squirrel.NotEq{cfg.DBField: cfg.Value}
 	case LIKE:
-		return squirrel.Like{cfg.DBField: cfg.Value}
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.Like{cfg.DBField: fieldValue + "%"}
+		}
 	case ILIKE:
-		return squirrel.ILike{cfg.DBField: cfg.Value}
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.ILike{cfg.DBField: "%" + fieldValue + "%"}
+		}
+	case BETWEEN:
+		return squirrel.Expr(cfg.DBField+" BETWEEN ? AND ?", cfg.Args...)
 	case GT:
 		return squirrel.Gt{cfg.DBField: cfg.Value}
 	case LT:
@@ -50,6 +56,10 @@ func (b *SQLBuilder) toCondition(cfg pendingFilter) squirrel.Sqlizer {
 		return squirrel.GtOrEq{cfg.DBField: cfg.Value}
 	case LTE:
 		return squirrel.LtOrEq{cfg.DBField: cfg.Value}
+	case IS_NULL:
+		return squirrel.Eq{cfg.DBField: nil}
+	case NOT_NULL:
+		return squirrel.NotEq{cfg.DBField: nil}
 	case EXPR:
 		if expr, ok := cfg.Value.(string); ok {
 			return squirrel.Expr(expr, cfg.Args...)

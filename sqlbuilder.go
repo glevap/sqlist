@@ -82,16 +82,21 @@ type (
 )
 
 const (
-	EQ      Op = "eq"      // =
-	NOT_EQ  Op = "neq"     // !=
-	LIKE    Op = "like"    // like
-	ILIKE   Op = "ilike"   // ilike
-	GT      Op = "gt"      // >
-	LT      Op = "lt"      // <
-	GTE     Op = "gte"     // >=
-	LTE     Op = "lte"     // <=
-	EXPR    Op = "expr"    // expression
-	EXPR_EQ Op = "expr_eq" // expression equal (specified)
+	EQ       Op = "eq"      // =
+	NOT_EQ   Op = "neq"     // !=
+	LIKE     Op = "like"    // like
+	ILIKE    Op = "ilike"   // ilike
+	GT       Op = "gt"      // >
+	LT       Op = "lt"      // <
+	GTE      Op = "gte"     // >=
+	LTE      Op = "lte"     // <=
+	EXPR     Op = "expr"    // expression
+	EXPR_EQ  Op = "expr_eq" // expression equal (specified)
+	IN       Op = "in"
+	NOT_IN   Op = "not_in"
+	BETWEEN  Op = "between"
+	IS_NULL  Op = "is_null"
+	NOT_NULL Op = "not_null"
 )
 
 // NewSQLBuilder создает новый билдер с squirrel
