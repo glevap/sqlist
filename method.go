@@ -84,21 +84,21 @@ func (b *SQLBuilder) WithFullJoin(table, condition string, args ...interface{}) 
 
 // МЕТОДЫ ДЛЯ УСЛОВИЙ (ВСЕ ВОЗВРАЩАЮТ pendingFilter) =======================================
 
-// todo: переделать
 // Where добавляет произвольное условие
-func (b *SQLBuilder) Where(condition squirrel.Sqlizer) *SQLBuilder {
-	// 	b.whereConditions = append(b.whereConditions, condition)
+func (b *SQLBuilder) Where(op Op, field string, value any, args ...any) *SQLBuilder {
+	b.pendingFilter = append(b.pendingFilter, b.withPending(op, field, value, args))
+
 	return b
 }
 
 // todo: переделать
 // WhereIf добавляет условие, если флаг true
-func (b *SQLBuilder) WhereIf(cond bool, condition squirrel.Sqlizer) *SQLBuilder {
-	// if cond {
-	// 	b.whereConditions = append(b.whereConditions, condition)
-	// }
-	return b
-}
+// func (b *SQLBuilder) WhereIf(cond bool, condition squirrel.Sqlizer) *SQLBuilder {
+// 	// if cond {
+// 	// 	b.whereConditions = append(b.whereConditions, condition)
+// 	// }
+// 	return b
+// }
 
 // унифицируем сохранение фильтров, ожидающих обработки и добавления в финальный SQL
 func (b *SQLBuilder) withPending(op Op, field string, value any, args ...any) pendingFilter {
@@ -132,6 +132,11 @@ func (b *SQLBuilder) NotEq(field string, value interface{}) *SQLBuilder {
 	return b
 }
 
+/*
+ * проблема в том, что мы не можем добавлять через данные оператор
+ * выражение!
+ * на выходе получаем, например, LIKE lower(?)%
+ */
 // Like добавляет условие LIKE
 func (b *SQLBuilder) Like(field string, value string) *SQLBuilder {
 	if value != "" {

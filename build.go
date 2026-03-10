@@ -62,7 +62,9 @@ func (b *SQLBuilder) toCondition(cfg pendingFilter) squirrel.Sqlizer {
 		return squirrel.NotEq{cfg.DBField: nil}
 	case EXPR:
 		if expr, ok := cfg.Value.(string); ok {
-			return squirrel.Expr(expr, cfg.Args...)
+			fullExpr := fmt.Sprintf("%s %s", cfg.DBField, expr)
+
+			return squirrel.Expr(fullExpr, cfg.Args...)
 		}
 	case EXPR_EQ:
 		if expr, ok := cfg.Value.(string); ok {

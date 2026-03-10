@@ -148,7 +148,7 @@ func TestJoinMethods(t *testing.T) {
 	})
 }
 
-func TestWhereConditions(t *testing.T) {
+func TestConditionOperators(t *testing.T) {
 	b := NewSQLBuilder().WithFrom("users").WithFields("id", "name")
 
 	t.Run("eq", func(t *testing.T) {
@@ -204,6 +204,21 @@ func TestWhereConditions(t *testing.T) {
 
 		assert.Len(t, b.pendingFilter, 12)
 	})
+}
+
+func TestWhereCondition(t *testing.T) {
+	b := NewSQLBuilder().
+		WithFrom("users u").
+		WithField("*").
+		Where(EQ, "u.actual", true)
+
+	sql, args, err := b.BuildSelect()
+
+	assert.Equal(t, err, nil)
+	assert.Len(t, args, 1)
+	assert.Equal(t, args[0], true)
+	assert.Contains(t, sql, "WHERE (u.actual = $1)")
+
 }
 
 // func TestWhereIf(t *testing.T) {
@@ -357,6 +372,21 @@ func TestApplyFilter(t *testing.T) {
 	t.Run("empty value", func(t *testing.T) {
 		b.ApplyFilter("name", "")
 		assert.Len(t, b.pendingFilter, 3) // no change
+	})
+}
+
+func TestExpressionFilter(t *testing.T) {
+	b := NewSQLBuilder().WithFrom("users u").WithField("*")
+	b.WithFieldConfig("fio", "concat_ws(' ', u.surname, u.name, u.second_name)", EXPR)
+
+	t.Run("add common expression", func(t *testing.T) {
+		b.ApplyFilter("fio", "LIKE ?%", "Howard Todd Andrew")
+		sql, args, err := b.BuildSelect()
+
+		assert.Len(t, b.pendingFilter, 1)
+		assert.Equal(t, err, nil)
+		assert.Contains(t, args, "Howard Todd Andrew")
+		assert.Contains(t, sql, "concat_ws(' ', u.surname, u.name, u.second_name) LIKE $1%")
 	})
 }
 
