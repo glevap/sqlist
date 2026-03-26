@@ -31,15 +31,16 @@ type (
 		placeholder   sq.PlaceholderFormat
 		fieldConfigs  map[string]FieldConfig
 
-		// Состояние (все условия как Sqlizer)
-		whereConditions []sq.Sqlizer
-		sort            SortConfig
-		limit           uint64
-		offset          uint64
-
-		// приоритетность полей по их именам: 0 - самый приоритетный
-		priority      []string
+		// Состояние
 		pendingFilter []pendingFilter
+		sort          SortConfig
+		limit         uint64
+		offset        uint64
+
+		// cte
+		cte      *SQLBuilder
+		alias    string
+		withName string // вот это для WITH ...{name}... AS ()
 	}
 
 	// FieldConfig описывает, как обрабатывать поле
@@ -102,14 +103,13 @@ const (
 // NewSQLBuilder создает новый билдер с squirrel
 func NewSQLBuilder() *SQLBuilder {
 	return &SQLBuilder{
-		fields:          []string{},
-		placeholder:     sq.Dollar, // по умолчанию PostgreSQL
-		fieldConfigs:    make(map[string]FieldConfig),
-		whereConditions: []sq.Sqlizer{},
-		joins:           []joinConfig{},
-		limit:           7,
-		offset:          0,
-		priority:        []string{},
-		pendingFilter:   make([]pendingFilter, 0),
+		fields:       []string{},
+		placeholder:  sq.Dollar, // по умолчанию PostgreSQL
+		fieldConfigs: make(map[string]FieldConfig),
+		// whereConditions: []sq.Sqlizer{},
+		joins:         []joinConfig{},
+		limit:         7,
+		offset:        0,
+		pendingFilter: make([]pendingFilter, 0),
 	}
 }
