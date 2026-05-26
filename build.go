@@ -146,7 +146,7 @@ func (b *SQLBuilder) BuildSelect() (string, []any, error) {
 		if sortClause != "" {
 			selectBuilder = selectBuilder.OrderBy(sortClause)
 		} else {
-			selectBuilder = selectBuilder.OrderBy(b.sort.Field + b.sort.Order)
+			selectBuilder = selectBuilder.OrderBy(fmt.Sprintf("%s %s", b.sort.Field, b.sort.Order))
 		}
 	}
 
