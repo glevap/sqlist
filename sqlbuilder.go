@@ -37,10 +37,14 @@ type (
 		limit         uint64
 		offset        uint64
 
-		// cte
-		cte      *SQLBuilder
+		// CTE
+		cte      []*SQLBuilder
 		alias    string
 		withName string // вот это для WITH ...{name}... AS ()
+
+		// все, что может нарушить работу или вызвать неоднозначное поведение
+		// билдера.
+		err error
 	}
 
 	// FieldConfig описывает, как обрабатывать поле

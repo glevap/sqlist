@@ -1,6 +1,8 @@
 package sqlist
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -37,6 +39,9 @@ func (b *SQLBuilder) WithField(field string) *SQLBuilder {
 	// можно включить после доработки
 	// и сменить в BuildSelect/ApplyFilter функцию Contains на ==
 
+	// todo:
+	// добавить проверку if field == "" и с trim
+
 	for _, val := range strings.Split(field, ",") {
 		b.fields = append(b.fields, strings.TrimSpace(val))
 	}
@@ -68,36 +73,43 @@ func (b *SQLBuilder) ApplyFilter(field string, value string, args ...any) *SQLBu
 	// todo:	если мои build-методы возвращают sql, args, err, то, можно писать ошибку!!!
 	cfg, ok := b.fieldConfigs[field]
 	if !ok {
+		b.err = fmt.Errorf("Builder error: поле %s не найдено в настройках полей запроса", field)
 		return b
 	}
 
-	var isCTEFilter bool
-
-	if b.cte != nil {
-		if slices.Contains(b.cte.fields, cfg.DBField) {
-			isCTEFilter = true
+	for _, cte := range b.cte {
+		if cte != nil && slices.Contains(cte.fields, cfg.DBField) {
+			cte.pendingFilter = append(cte.pendingFilter, b.withPending(cfg.Operator, cfg.DBField, value, args...))
+			return b
 		}
 	}
 
-	// конфиг передается по частям, т.к. есть WHERE-метод, и он не связан с ApplyFilters
-	if isCTEFilter {
-		b.cte.pendingFilter = append(b.cte.pendingFilter,
-			b.withPending(cfg.Operator, cfg.DBField, value, args...),
-		)
-	} else {
-		b.pendingFilter = append(b.pendingFilter,
-			b.withPending(cfg.Operator, cfg.DBField, value, args...),
-		)
-	}
+	b.pendingFilter = append(b.pendingFilter,
+		b.withPending(cfg.Operator, cfg.DBField, value, args...),
+	)
 
 	return b
 }
 
 // возвращает настроенный экземпляр CTE билдера
 func (b *SQLBuilder) WithCTE(name string, alias string) *SQLBuilder {
-	b.cte = b.cloneForCTE()
+	// b.cte = b.cloneForCTE()
 
-	b.cte.withName = name
+	// необходимая защита
+	// поскольку CTE создается через отдельный экземпляр билдера, то ему доступны
+	// все методы, в том числе и WithCTE(), что будет являться нарушением синтаксиса SQL
+	if b.withName != "" {
+		b.err = errors.New("SQL Error: объявление CTE внутри CTE не поддерживается")
+		return b
+	}
+
+	cte := b.cloneForCTE()
+	cte.withName = name
+	cte.alias = alias
+
+	b.cte = append(b.cte, cte)
+
+	// b.cte.withName = name
 
 	/*
 	 * это умышленное дублирование,
@@ -106,9 +118,10 @@ func (b *SQLBuilder) WithCTE(name string, alias string) *SQLBuilder {
 	 * по нужным секциям запроса,
 	 * да и вытаскивать алиас из FROM небезопасно (он может быть не указан)
 	 */
-	b.cte.alias = alias
+	// b.cte.alias = alias
 
-	return b.cte
+	// return b.cte
+	return cte
 }
 
 // унифицируем сохранение фильтров, ожидающих обработки и добавления в финальный SQL
