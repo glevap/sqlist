@@ -81,14 +81,15 @@ func (b *SQLBuilder) toCondition(cfg pendingFilter) squirrel.Sqlizer {
 		return squirrel.NotEq{cfg.DBField: cfg.Value}
 	case LIKE:
 		if fieldValue, ok := cfg.Value.(string); ok {
-			return squirrel.Like{cfg.DBField: fieldValue + "%"}
+			return squirrel.Like{cfg.DBField: fieldValue}
 		}
 	case ILIKE:
 		if fieldValue, ok := cfg.Value.(string); ok {
-			return squirrel.ILike{cfg.DBField: "%" + fieldValue + "%"}
+			return squirrel.ILike{cfg.DBField: fieldValue}
 		}
 	case BETWEEN:
-		return squirrel.Expr(cfg.DBField+" BETWEEN ? AND ?", cfg.Args...)
+		return squirrel.Expr(
+			fmt.Sprintf("%s BETWEEN ? AND ?", cfg.DBField), cfg.Args...)
 	case GT:
 		return squirrel.Gt{cfg.DBField: cfg.Value}
 	case LT:
@@ -186,30 +187,7 @@ func (b *SQLBuilder) BuildSelect() (string, []any, error) {
 
 	// Добавляем сортировку
 	if b.sort.Field != "" {
-		// var sortClause string
-
-		// // todo: если CTE несколько???
-		// for _, cte := range b.cte {
-		// 	if cte != nil {
-		// 		if slices.Contains(cte.fields, b.sort.Field) {
-		// 			fieldParts := strings.Split(b.sort.Field, ".")
-
-		// 			// это если указан alias
-		// 			if len(fieldParts) == 2 {
-		// 				sortClause = fmt.Sprintf("%s.%s  %s", cte.alias, fieldParts[1], b.sort.Order)
-		// 			}
-
-		// 			// а если не указан, будет неочевидность в sql при обращении к полям (SQLError при выполнении)
-		// 		}
-		// 	}
-		// }
-
-		// // сортировка будет добавлена в корневой SELECT
-		// if sortClause != "" {
-		// 	selectBuilder = selectBuilder.OrderBy(sortClause)
-		// } else {
 		selectBuilder = selectBuilder.OrderBy(fmt.Sprintf("%s %s", b.sort.Field, b.sort.Order))
-		// }
 	}
 
 	// Добавляем пагинацию
@@ -236,7 +214,7 @@ func (b *SQLBuilder) BuildSelect() (string, []any, error) {
 func (b *SQLBuilder) cloneForCTE() *SQLBuilder {
 	return &SQLBuilder{
 		fields:        []string{},
-		placeholder:   sq.Dollar, // по умолчанию PostgreSQL
+		placeholder:   b.placeholder, // по умолчанию PostgreSQL
 		fieldConfigs:  b.fieldConfigs,
 		pendingFilter: make([]pendingFilter, 0),
 		joins:         []joinConfig{},
