@@ -367,6 +367,138 @@ func TestBuildSelect(t *testing.T) {
 	})
 }
 
+func TestFiltersWithLIKE(t *testing.T) {
+	t.Run("select with filter LIKE", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", LIKE)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name LIKE $1)")
+		assert.Contains(t, args, "john")
+	})
+
+	t.Run("select with filter LIKE_WITH_START", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", LIKE_WITH_START)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name LIKE $1)")
+		assert.Contains(t, args, "%john")
+	})
+
+	t.Run("select with filter LIKE_WITH_END", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", LIKE_WITH_END)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name LIKE $1)")
+		assert.Contains(t, args, "john%")
+	})
+
+	t.Run("select with filter LIKE_WITH_FULL", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", LIKE_WITH_FULL)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name LIKE $1)")
+		assert.Contains(t, args, "%john%")
+	})
+}
+
+func TestFiltersWithILIKE(t *testing.T) {
+	t.Run("select with filter ILIKE", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", ILIKE)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name ILIKE $1)")
+		assert.Contains(t, args, "john")
+	})
+
+	t.Run("select with filter ILIKE_WITH_START", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", ILIKE_WITH_START)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name ILIKE $1)")
+		assert.Contains(t, args, "%john")
+	})
+
+	t.Run("select with filter ILIKE_WITH_END", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", ILIKE_WITH_END)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name ILIKE $1)")
+		assert.Contains(t, args, "john%")
+	})
+
+	t.Run("select with filter ILIKE_WITH_FULL", func(t *testing.T) {
+		b := NewSQLBuilder().WithPlaceholder(Dollar).WithFrom("users u").
+			WithField("*").
+			WithFieldConfig("name", "u.name", ILIKE_WITH_FULL)
+
+		name := "john"
+
+		b.ApplyFilter("name", name)
+
+		sql, args, err := b.BuildSelect()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "SELECT * FROM users u WHERE (u.name ILIKE $1)")
+		assert.Contains(t, args, "%john%")
+	})
+}
+
 func TestBuildCount(t *testing.T) {
 	t.Run("normal count with WHERE conditions", func(t *testing.T) {
 		b := NewSQLBuilder().
@@ -564,7 +696,7 @@ func TestComplexQuery(t *testing.T) {
 	// Add conditions
 	b.Where(EQ, "u.active", true)
 	b.Where(GT, "o.total", 100)
-	b.Where(ILIKE, "u.name", "%john%")
+	b.Where(ILIKE, "u.name", "john")
 	b.Sort("o.total", "DESC")
 	b.Limit(20)
 	b.Offset(40)
@@ -585,7 +717,7 @@ func TestComplexQuery(t *testing.T) {
 	assert.Len(t, args, 3)
 	assert.Equal(t, true, args[0])
 	assert.Equal(t, 100, args[1])
-	assert.Equal(t, "%john%", args[2]) // todo: used to be john
+	assert.Equal(t, "john%", args[2]) // todo: used to be john
 }
 
 func TestCTE(t *testing.T) {

@@ -102,6 +102,20 @@ const (
 	BETWEEN  Op = "between"
 	IS_NULL  Op = "is_null"
 	NOT_NULL Op = "not_null"
+
+	// мне не нравится, но это нужно для избавления от IF проверок
+	// при вызове ApplyFilter, т.к. в динамике мы никак иначе не
+	// можем задавать местоположение плейсхолдера в паттерне поиска
+	// ApplyFilter работает исключительно с настройками полей WithFieldConfig
+	// либо задавать настройки паттерна LIKE/ILIKE в WithFieldConfig,
+	// либо при вызове ApplyFilter проверять, есть ли поле, и руками
+	// менять передаваемый аргумент значения поля
+	LIKE_WITH_START  Op = "like_with_start"
+	LIKE_WITH_END    Op = "like_with_end"
+	LIKE_WITH_FULL   Op = "like_with_full"
+	ILIKE_WITH_START Op = "ilike_with_start"
+	ILIKE_WITH_END   Op = "ilike_with_end"
+	ILIKE_WITH_FULL  Op = "ilike_with_full"
 )
 
 // NewSQLBuilder создает новый билдер с squirrel

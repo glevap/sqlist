@@ -81,11 +81,36 @@ func (b *SQLBuilder) toCondition(cfg pendingFilter) squirrel.Sqlizer {
 		return squirrel.NotEq{cfg.DBField: cfg.Value}
 	case LIKE:
 		if fieldValue, ok := cfg.Value.(string); ok {
-			return squirrel.Like{cfg.DBField: fieldValue}
+			return squirrel.Like{cfg.DBField: fmt.Sprintf("%s", fieldValue)}
 		}
 	case ILIKE:
 		if fieldValue, ok := cfg.Value.(string); ok {
-			return squirrel.ILike{cfg.DBField: fieldValue}
+			return squirrel.ILike{cfg.DBField: fmt.Sprintf("%s", fieldValue)}
+		}
+	// todo: крайне спорное решение с вариациями LIKE/ILIKE
+	case LIKE_WITH_START:
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.Like{cfg.DBField: fmt.Sprintf("%%%s", fieldValue)}
+		}
+	case LIKE_WITH_END:
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.Like{cfg.DBField: fmt.Sprintf("%s%%", fieldValue)}
+		}
+	case LIKE_WITH_FULL:
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.Like{cfg.DBField: fmt.Sprintf("%%%s%%", fieldValue)}
+		}
+	case ILIKE_WITH_START:
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.ILike{cfg.DBField: fmt.Sprintf("%%%s", fieldValue)}
+		}
+	case ILIKE_WITH_END:
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.ILike{cfg.DBField: fmt.Sprintf("%s%%", fieldValue)}
+		}
+	case ILIKE_WITH_FULL:
+		if fieldValue, ok := cfg.Value.(string); ok {
+			return squirrel.ILike{cfg.DBField: fmt.Sprintf("%%%s%%", fieldValue)}
 		}
 	case BETWEEN:
 		return squirrel.Expr(
