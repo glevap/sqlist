@@ -215,7 +215,7 @@ func (b *SQLBuilder) SortIf(field, order string) *SQLBuilder {
 }
 
 func (b *SQLBuilder) ApplySort(field, order string) *SQLBuilder {
-	b.SortIf(b.mapField(field), order)
+	b.SortIf(b.mapField(field), strings.TrimSpace(order))
 
 	if b.sort.Field != "" {
 		b.cleanSortField()
