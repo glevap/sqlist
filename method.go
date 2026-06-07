@@ -196,7 +196,11 @@ func (b *SQLBuilder) Where(op Op, field string, value any, args ...any) *SQLBuil
 
 // Sort устанавливает сортировку
 func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
-	// b.sort = SortConfig{Field: b.mapField(field), Order: order}
+	if !slices.Contains([]string{"desc", "asc"}, strings.ToLower(order)) {
+		b.err = fmt.Errorf("order contains unsupported expression: %s", order)
+		return b
+	}
+
 	b.sort = SortConfig{Field: field, Order: order}
 	return b
 }
@@ -205,10 +209,75 @@ func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
 // todo: а подразумевается, что должно быть condition, по которому будет применяться сортировочное правило!
 func (b *SQLBuilder) SortIf(field, order string) *SQLBuilder {
 	if field != "" {
-		// b.sort = SortConfig{Field: b.mapField(field), Order: order}
-		b.sort = SortConfig{Field: field, Order: order}
+		b.Sort(field, order)
 	}
 	return b
+}
+
+func (b *SQLBuilder) ApplySort(field, order string) *SQLBuilder {
+	b.SortIf(b.mapField(field), order)
+
+	if b.sort.Field != "" {
+		b.cleanSortField()
+	}
+	return b
+}
+
+// при использовании настроек полей
+// нужно получить очищенное имя поля сортировки,
+// а поле в конфиге либо указано с алиасом,
+// либо обернуто в выражение
+// можно и нужно использовать при сортировке сырое имя поля,
+// т.к. сортировка применяется к результату всего sql
+func (b *SQLBuilder) cleanSortField() {
+	field := extractInnerField(b.sort.Field)
+
+	// Проверяем, не осталось ли запятых (признак нескольких аргументов)
+	if strings.Contains(field, ",") {
+		b.err = fmt.Errorf("sort field contains multiple arguments: %s", b.sort.Field)
+		return
+	}
+
+	// Берём последнюю часть после точки
+	if idx := strings.LastIndex(field, "."); idx != -1 {
+		field = field[idx+1:]
+	}
+
+	b.sort.Field = strings.TrimSpace(field)
+
+	// Финальная проверка: поле не должно содержать скобки
+	if strings.ContainsAny(b.sort.Field, "()") {
+		b.err = fmt.Errorf("sort field contains unsupported expression: %s", b.sort.Field)
+	}
+}
+
+func extractInnerField(field string) string {
+	field = strings.TrimSpace(field)
+
+	// Ищем позицию после имени функции
+	idx := strings.Index(field, "(")
+	if idx == -1 {
+		return field
+	}
+
+	// Ищем соответствующую закрывающую скобку
+	depth := 0
+	start := idx + 1
+
+	for i := start; i < len(field); i++ {
+		switch field[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return extractInnerField(field[start:i])
+			}
+
+			depth--
+		}
+	}
+
+	return field
 }
 
 // Limit устанавливает лимит

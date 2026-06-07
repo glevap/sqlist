@@ -886,3 +886,280 @@ func TestToConditionEdgeCases(t *testing.T) {
 		assert.NotNil(t, condition) // returns default condition "1=1"
 	})
 }
+
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+// ==========================================================================
+
+func TestApplySort(t *testing.T) {
+	t.Run("apply sort with field mapping", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFieldConfig("user_id", "users.id", EQ)
+
+		b.ApplySort("user_id", "ASC")
+
+		assert.Equal(t, "id", b.sort.Field) // после cleanSortField
+		assert.Equal(t, "ASC", b.sort.Order)
+		assert.NoError(t, b.err)
+	})
+
+	t.Run("apply sort with function in field config", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFieldConfig("name", "LOWER(users.name)", LIKE)
+
+		b.ApplySort("name", "DESC")
+
+		assert.Equal(t, "name", b.sort.Field) // очистилось от LOWER() и алиаса
+		assert.Equal(t, "DESC", b.sort.Order)
+	})
+
+	t.Run("apply sort with empty field does nothing", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
+		b.ApplySort("", "ASC")
+
+		assert.Empty(t, b.sort.Field)
+		assert.Empty(t, b.sort.Order)
+	})
+
+	t.Run("apply sort with unknown field uses field as is", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
+		b.ApplySort("unknown_field", "ASC")
+
+		assert.Equal(t, "unknown_field", b.sort.Field)
+	})
+
+	t.Run("apply sort with invalid order sets error", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
+		b.ApplySort("id", "INVALID")
+
+		assert.NotNil(t, b.err)
+		assert.Contains(t, b.err.Error(), "unsupported expression")
+	})
+}
+
+func TestCleanSortField(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		expected  string
+		expectErr bool
+	}{
+		{
+			name:     "simple field",
+			input:    "id",
+			expected: "id",
+		},
+		{
+			name:     "field with table alias",
+			input:    "users.id",
+			expected: "id",
+		},
+		{
+			name:     "field with schema and table",
+			input:    "public.users.id",
+			expected: "id",
+		},
+		{
+			name:     "function with one argument",
+			input:    "LOWER(name)",
+			expected: "name",
+		},
+		{
+			name:     "function with table alias",
+			input:    "LOWER(users.name)",
+			expected: "name",
+		},
+		{
+			name:      "function with multiple arguments",
+			input:     "SUBSTRING(name, 1, 5)",
+			expected:  "",
+			expectErr: true,
+		},
+		{
+			name:      "nested functions",
+			input:     "LOWER(SUBSTRING(name, 1, 5))",
+			expected:  "",
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewSQLBuilder()
+			b.sort = SortConfig{Field: tt.input, Order: "ASC"}
+			b.cleanSortField()
+
+			if tt.expectErr {
+				assert.NotNil(t, b.err)
+			} else {
+				assert.NoError(t, b.err)
+				assert.Equal(t, tt.expected, b.sort.Field)
+			}
+		})
+	}
+}
+
+func TestApplyFilterWithMultipleCTEs(t *testing.T) {
+	t.Run("filter applies to first matching CTE", func(t *testing.T) {
+		main := NewSQLBuilder().WithFrom("final").WithField("*")
+
+		cte1 := main.WithCTE("cte1", "c1")
+		cte1.WithFrom("table1").WithField("id, name")
+
+		cte2 := main.WithCTE("cte2", "c2")
+		cte2.WithFrom("table2").WithField("id, status")
+
+		main.WithFieldConfig("status", "status", EQ)
+		main.ApplyFilter("status", "active")
+
+		// Фильтр должен попасть в cte2, потому что поле status есть в cte2.fields
+		assert.Len(t, cte2.pendingFilter, 1)
+		assert.Empty(t, cte1.pendingFilter)
+		assert.Empty(t, main.pendingFilter)
+	})
+
+	t.Run("filter applies to main when not in any CTE", func(t *testing.T) {
+		main := NewSQLBuilder().WithFrom("final").WithField("*")
+
+		cte1 := main.WithCTE("cte1", "c1")
+		cte1.WithFrom("table1").WithField("id")
+
+		main.WithFieldConfig("global_status", "status", EQ)
+		main.ApplyFilter("global_status", "active")
+
+		assert.Len(t, main.pendingFilter, 1)
+		assert.Empty(t, cte1.pendingFilter)
+	})
+}
+
+func TestBuildCountWithCTE(t *testing.T) {
+	t.Run("count with CTE that has filter", func(t *testing.T) {
+		main := NewSQLBuilder().WithFrom("active_users").WithField("*")
+
+		cte := main.WithCTE("active_users", "au")
+		cte.WithFrom("users").WithField("id").
+			Where(EQ, "active", true)
+
+		sql, args, err := main.BuildCount()
+
+		require.NoError(t, err)
+		assert.Contains(t, sql, "WITH active_users AS (")
+		assert.Contains(t, sql, "WHERE (active = $1)")
+		assert.Contains(t, sql, "SELECT COUNT(*) FROM (")
+		assert.Len(t, args, 1)
+	})
+}
+
+func TestSortIfValidation(t *testing.T) {
+	t.Run("sort if with valid order", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
+		b.SortIf("id", "DESC")
+		assert.Equal(t, "id", b.sort.Field)
+		assert.Equal(t, "DESC", b.sort.Order)
+	})
+
+	t.Run("sort if with empty field does nothing", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users")
+		b.Sort("default", "ASC")
+		b.SortIf("", "DESC")
+		assert.Equal(t, "default", b.sort.Field) // не изменилось
+	})
+}
+
+func TestSortAndApplySortConflict(t *testing.T) {
+	t.Run("ApplySort overrides previous Sort", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFieldConfig("user_id", "users.id", EQ)
+
+		// Сначала жёсткая сортировка
+		b.Sort("created_at", "DESC")
+		assert.Equal(t, "created_at", b.sort.Field)
+		assert.Equal(t, "DESC", b.sort.Order)
+
+		// Потом динамическая сортировка из запроса
+		b.ApplySort("user_id", "ASC")
+
+		// Должна переопределиться
+		assert.Equal(t, "id", b.sort.Field) // после cleanSortField
+		assert.Equal(t, "ASC", b.sort.Order)
+	})
+
+	t.Run("Sort overrides previous ApplySort", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFieldConfig("user_id", "users.id", EQ)
+
+		// Сначала динамическая сортировка
+		b.ApplySort("user_id", "ASC")
+		assert.Equal(t, "id", b.sort.Field)
+
+		// Потом жёсткая сортировка (например, сортировка по умолчанию)
+		b.Sort("name", "DESC")
+
+		// Должна переопределиться
+		assert.Equal(t, "name", b.sort.Field)
+		assert.Equal(t, "DESC", b.sort.Order)
+	})
+
+	t.Run("SortIf with empty field does not override ApplySort", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFieldConfig("user_id", "users.id", EQ)
+
+		// Применили динамическую сортировку
+		b.ApplySort("user_id", "ASC")
+
+		// Пытаемся применить SortIf с пустым полем
+		b.SortIf("", "DESC")
+
+		// Сортировка не должна измениться
+		assert.Equal(t, "id", b.sort.Field)
+		assert.Equal(t, "ASC", b.sort.Order)
+	})
+
+	t.Run("chain Sort and ApplySort with same field", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithFieldConfig("user_name", "LOWER(users.name)", LIKE)
+
+		// Жёсткая сортировка
+		b.Sort("id", "ASC")
+
+		// Динамическая сортировка по другому полю
+		b.ApplySort("user_name", "DESC")
+
+		assert.Equal(t, "name", b.sort.Field)
+		assert.Equal(t, "DESC", b.sort.Order)
+	})
+
+	t.Run("Apply Sort with Sort in CTE", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("user_name", "LOWER(users.name)", LIKE)
+
+		cte := b.WithCTE("cte", "c").WithField("*").WithFrom("users u")
+		cte.Sort("u.id", "desc")
+
+		b.WithFrom("cte c").WithField("*")
+
+		// Динамическая сортировка по другому полю
+		b.ApplySort("user_name", "DESC")
+		sql, _, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Equal(t, "name", b.sort.Field)
+		assert.Equal(t, "DESC", b.sort.Order)
+		assert.Contains(t, sql, "ORDER BY u.id desc")
+		assert.Contains(t, sql, "ORDER BY name DESC")
+	})
+}
