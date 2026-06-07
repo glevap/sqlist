@@ -196,10 +196,10 @@ func (b *SQLBuilder) Where(op Op, field string, value any, args ...any) *SQLBuil
 
 // Sort устанавливает сортировку
 func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
-	if !slices.Contains([]string{"desc", "asc"}, strings.ToLower(order)) {
-		b.err = fmt.Errorf("order contains unsupported expression: %s", order)
-		return b
-	}
+	// if !slices.Contains([]string{"desc", "asc"}, strings.ToLower(order)) {
+	// 	b.err = fmt.Errorf("order contains unsupported expression: %s", order)
+	// 	return b
+	// }
 
 	b.sort = SortConfig{Field: field, Order: order}
 	return b
@@ -215,7 +215,7 @@ func (b *SQLBuilder) SortIf(field, order string) *SQLBuilder {
 }
 
 func (b *SQLBuilder) ApplySort(field, order string) *SQLBuilder {
-	b.SortIf(b.mapField(field), strings.TrimSpace(order))
+	b.SortIf(b.mapField(field), order)
 
 	if b.sort.Field != "" {
 		b.cleanSortField()
