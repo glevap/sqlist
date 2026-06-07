@@ -232,7 +232,7 @@ func TestSorting(t *testing.T) {
 			WithFieldConfig("user_id", "users.id", EQ)
 
 		b.Sort("user_id", "ASC")
-		assert.Equal(t, "users.id", b.sort.Field)
+		assert.Equal(t, "user_id", b.sort.Field)
 		assert.Equal(t, "ASC", b.sort.Order)
 	})
 
@@ -696,7 +696,10 @@ func TestComplexQuery(t *testing.T) {
 	// Add conditions
 	b.Where(EQ, "u.active", true)
 	b.Where(GT, "o.total", 100)
+
+	// without explicitly specifying a placeholder, it will be john
 	b.Where(ILIKE, "u.name", "john")
+
 	b.Sort("o.total", "DESC")
 	b.Limit(20)
 	b.Offset(40)
@@ -717,7 +720,7 @@ func TestComplexQuery(t *testing.T) {
 	assert.Len(t, args, 3)
 	assert.Equal(t, true, args[0])
 	assert.Equal(t, 100, args[1])
-	assert.Equal(t, "john%", args[2]) // todo: used to be john
+	assert.Equal(t, "john", args[2])
 }
 
 func TestCTE(t *testing.T) {

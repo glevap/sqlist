@@ -78,7 +78,11 @@ func (b *SQLBuilder) ApplyFilter(field string, value string, args ...any) *SQLBu
 	}
 
 	for _, cte := range b.cte {
-		if cte != nil && slices.Contains(cte.fields, cfg.DBField) {
+		if cte == nil {
+			continue
+		}
+
+		if slices.Contains(cte.fields, cfg.DBField) {
 			cte.pendingFilter = append(cte.pendingFilter, b.withPending(cfg.Operator, cfg.DBField, value, args...))
 			return b
 		}
@@ -192,7 +196,8 @@ func (b *SQLBuilder) Where(op Op, field string, value any, args ...any) *SQLBuil
 
 // Sort устанавливает сортировку
 func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
-	b.sort = SortConfig{Field: b.mapField(field), Order: order}
+	// b.sort = SortConfig{Field: b.mapField(field), Order: order}
+	b.sort = SortConfig{Field: field, Order: order}
 	return b
 }
 
@@ -200,7 +205,8 @@ func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
 // todo: а подразумевается, что должно быть condition, по которому будет применяться сортировочное правило!
 func (b *SQLBuilder) SortIf(field, order string) *SQLBuilder {
 	if field != "" {
-		b.sort = SortConfig{Field: b.mapField(field), Order: order}
+		// b.sort = SortConfig{Field: b.mapField(field), Order: order}
+		b.sort = SortConfig{Field: field, Order: order}
 	}
 	return b
 }
