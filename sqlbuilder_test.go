@@ -938,12 +938,15 @@ func TestApplySort(t *testing.T) {
 		assert.Equal(t, "unknown_field", b.sort.Field)
 	})
 
-	t.Run("apply sort with invalid order sets error", func(t *testing.T) {
-		b := NewSQLBuilder().WithFrom("users")
+	t.Run("apply sort with invalid order won't sets error", func(t *testing.T) {
+		b := NewSQLBuilder().WithFrom("users").WithField("*")
 		b.ApplySort("id", "INVALID")
 
-		assert.NotNil(t, b.err)
-		assert.Contains(t, b.err.Error(), "unsupported expression")
+		sql, _, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		// Invalid SQL possible, but that's the way it is
+		assert.Contains(t, sql, "ORDER BY id INVALID")
 	})
 }
 

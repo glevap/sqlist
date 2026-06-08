@@ -49,8 +49,9 @@ type (
 
 	// FieldConfig описывает, как обрабатывать поле
 	FieldConfig struct {
-		DBField  string // имя поля в БД
-		Operator Op     // "eq", "like", "ilike", "gt", "lt"
+		DBField   string // имя поля в БД
+		Operator  Op     // "eq", "like", "ilike", "gt", "lt"
+		SortField string // настройка имени поля для сортировки
 	}
 
 	// joinConfig использует Sqlizer для условия

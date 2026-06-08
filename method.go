@@ -56,6 +56,16 @@ func (b *SQLBuilder) WithFieldConfig(field string, dbField string, op Op) *SQLBu
 		b.fieldConfigs = make(map[string]FieldConfig)
 	}
 
+	if cfg, ok := b.fieldConfigs[field]; ok {
+		b.fieldConfigs[field] = FieldConfig{
+			DBField:   dbField,
+			Operator:  op,
+			SortField: cfg.SortField,
+		}
+
+		return b
+	}
+
 	b.fieldConfigs[field] = FieldConfig{
 		DBField:  dbField,
 		Operator: op,
@@ -74,6 +84,10 @@ func (b *SQLBuilder) ApplyFilter(field string, value string, args ...any) *SQLBu
 	cfg, ok := b.fieldConfigs[field]
 	if !ok {
 		b.err = fmt.Errorf("Builder error: поле %s не найдено в настройках полей запроса", field)
+		return b
+	}
+
+	if cfg.DBField == "" {
 		return b
 	}
 
@@ -140,14 +154,6 @@ func (b *SQLBuilder) withPending(op Op, field string, value any, args ...any) pe
 	}
 }
 
-// MapField возвращает настоящее имя колонки по псевдониму
-func (b *SQLBuilder) mapField(alias string) string {
-	if cfg, ok := b.fieldConfigs[alias]; ok {
-		return cfg.DBField
-	}
-	return alias // если не нашли, возвращаем как есть
-}
-
 // МЕТОДЫ ДЛЯ JOIN =========================================================================
 
 // WithJoin добавляет произвольный JOIN
@@ -194,6 +200,28 @@ func (b *SQLBuilder) Where(op Op, field string, value any, args ...any) *SQLBuil
 
 // МЕТОДЫ ДЛЯ СОРТИРОВКИ И ПАГИНАЦИИ =======================================================
 
+func (b *SQLBuilder) WithSortFieldConfig(field string, sortField string) *SQLBuilder {
+	if cfg, ok := b.fieldConfigs[field]; ok {
+		cfg.SortField = sortField
+
+		b.fieldConfigs[field] = cfg
+
+		return b
+	}
+
+	if b.fieldConfigs == nil {
+		b.fieldConfigs = make(map[string]FieldConfig)
+	}
+
+	b.fieldConfigs[field] = FieldConfig{
+		DBField:   "",
+		Operator:  "",
+		SortField: sortField,
+	}
+
+	return b
+}
+
 // Sort устанавливает сортировку
 func (b *SQLBuilder) Sort(field, order string) *SQLBuilder {
 	// if !slices.Contains([]string{"desc", "asc"}, strings.ToLower(order)) {
@@ -215,12 +243,38 @@ func (b *SQLBuilder) SortIf(field, order string) *SQLBuilder {
 }
 
 func (b *SQLBuilder) ApplySort(field, order string) *SQLBuilder {
-	b.SortIf(b.mapField(field), order)
+	// перетираем сортировку
+	b.sort = SortConfig{}
 
-	if b.sort.Field != "" {
-		b.cleanSortField()
+	// нужно найти конфиг
+	if cfg, ok := b.fieldConfigs[field]; ok {
+		// если есть, проверяем, что SortField не пустой, иначе используем DBField
+		b.SortIf(cfg.SortField, order)
+
+		if b.sort.Field != "" {
+			return b
+		}
+
+		b.SortIf(cfg.DBField, order)
+
+		if b.sort.Field != "" {
+			b.cleanSortField()
+		}
 	}
+
+	if b.sort.Field == "" {
+		b.SortIf(field, order)
+	}
+
 	return b
+}
+
+// MapField возвращает настоящее имя колонки по псевдониму
+func (b *SQLBuilder) mapField(alias string) string {
+	if cfg, ok := b.fieldConfigs[alias]; ok {
+		return cfg.DBField
+	}
+	return alias // если не нашли, возвращаем как есть
 }
 
 // при использовании настроек полей
