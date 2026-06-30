@@ -2,6 +2,7 @@ package sqlist
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/stretchr/testify/assert"
@@ -666,19 +667,43 @@ func TestConditionOperators(t *testing.T) {
 }
 
 func TestBETWEENOperator(t *testing.T) {
-	b := NewSQLBuilder().
-		WithFrom("users").
-		WithField("id").
-		Where(BETWEEN, "age", nil, 18, 65).
-		WithPlaceholder(Question)
+	t.Run("date filter with BETWEEN operator in WHERE", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users").
+			WithField("id").
+			Where(BETWEEN, "age", nil, 18, 65).
+			WithPlaceholder(Question)
 
-	sql, args, err := b.BuildSelect()
+		sql, args, err := b.BuildSelect()
 
-	require.NoError(t, err)
-	assert.Contains(t, sql, "age BETWEEN ? AND ?")
-	assert.Len(t, args, 2)
-	assert.Equal(t, 18, args[0])
-	assert.Equal(t, 65, args[1])
+		require.NoError(t, err)
+		assert.Contains(t, sql, "age BETWEEN ? AND ?")
+		assert.Len(t, args, 2)
+		assert.Equal(t, 18, args[0])
+		assert.Equal(t, 65, args[1])
+	})
+
+	t.Run("date filter with BETWEEN operator in WithFieldConfig", func(t *testing.T) {
+		main := NewSQLBuilder().
+			WithFieldConfig("created", "c1.created_at", BETWEEN).
+			WithFrom("final").
+			WithField("*")
+
+		main.WithCTE("cte1", "c1").
+			WithFrom("table1").
+			WithField("id")
+
+		d := time.Now()
+
+		// need startDate & finalDate (+1 Day to startDate)
+		main.ApplyFilter("created", "?", d, d.AddDate(0, 0, 1).Truncate(24*time.Hour))
+
+		sql, args, err := main.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Len(t, args, 2)
+		assert.Contains(t, sql, "BETWEEN $1 AND $2")
+	})
 }
 
 func TestComplexQuery(t *testing.T) {
