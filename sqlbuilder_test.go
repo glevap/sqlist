@@ -1,6 +1,7 @@
 package sqlist
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -1050,9 +1051,9 @@ func TestApplyFilterWithMultipleCTEs(t *testing.T) {
 		main.WithFieldConfig("status", "status", EQ)
 		main.ApplyFilter("status", "active")
 
+		assert.Empty(t, cte1.pendingFilter)
 		// Фильтр должен попасть в cte2, потому что поле status есть в cte2.fields
 		assert.Len(t, cte2.pendingFilter, 1)
-		assert.Empty(t, cte1.pendingFilter)
 		assert.Empty(t, main.pendingFilter)
 	})
 
@@ -1301,5 +1302,398 @@ func TestGroupBy(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Contains(t, sql, "GROUP BY non_existent_field")
 		// Ошибка придёт от PostgreSQL: column "non_existent_field" does not exist
+	})
+}
+
+func TestApplyFilterBehavior(t *testing.T) {
+	t.Run("simple query", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("name", "name", EQ)
+
+		b.WithFrom("my_table").
+			WithField("id, max(updated_at) as last_updated, surname, name, full_name")
+
+		filter := map[string]string{
+			"search_name": "Tom",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "WHERE (name = $1)")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("simple query with error", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("name", "name", EQ)
+
+		b.WithFrom("my_table").
+			WithField("id, max(updated_at) as last_updated, surname, name, full_name")
+
+		filter := map[string]string{
+			"search_something": "sample_thing",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := b.BuildSelect()
+
+		// in fieldConfigs has no fields like `something`
+		assert.ErrorContains(t, err, "не найдено в настройках полей запроса")
+		assert.NotContains(t, sql, "WHERE (something = $1)")
+		assert.Len(t, args, 0)
+	})
+
+	t.Run("query with multiple cte [ NO ALIASES ]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("name", "name", EQ) // WITHOUT ALIAS!
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table").
+			WithField("id, max(updated_at) as last_updated, surname, name, full_name") // FIRST MATCHING = apply filter
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data prd").
+			WithField("id, last_updated, surname, name, full_name")
+		b.WithFrom("final_query fq").WithField("*")
+
+		filter := map[string]string{
+			"search_name": "Tom",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(squirrel.Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "WHERE (name = $1)")
+		assert.Len(t, args, 1)
+
+		sql, args, err = cte2.buildCTEBaseSelect().ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("query with multiple cte [ fieldConfigs HAS ALIAS ]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("name", "prd.name", EQ) // WITH ALIAS!
+
+		cte1 := b.WithCTE("preload_data", "prd").WithFrom("my_table").
+			WithField("id, max(updated_at) as last_updated, surname, name, full_name") // FIRST MATCHING = apply filter
+
+		cte2 := b.WithCTE("final_query", "fq").WithFrom("preload_data pd").
+			WithField("prd.id, prd.last_updated, prd.surname, prd.name, prd.full_name")
+
+		b.WithFrom("final_query fq").WithField("*")
+
+		filter := map[string]string{
+			"search_name": "Tom",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(squirrel.Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "WHERE (prd.name = $1)")
+		assert.Len(t, args, 1)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("query with multiple cte [ everyone HAS ALIAS ]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("name", "prd.name", EQ) // WITH ALIAS!
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table mt").                                                               // WITH ALIAS!
+			WithField("mt.id, max(updated_at) as last_updated, mt.surname, mt.name, mt.full_name") // WITH ALIAS!
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data prd").                                               // WITH ALIAS!                                          // WITH ALIAS!
+			WithField("prd.id, prd.last_updated, prd.surname, prd.name, prd.full_name") // HERE's MATCHING = apply filter
+
+		b.WithFrom("final_query fq").WithField("*")
+
+		filter := map[string]string{
+			"search_name": "Tom",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "WHERE (prd.name = $1)")
+		assert.Len(t, args, 1)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("query with expression into fieldconfig [ HAS ALIAS, NO FIELDS]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("snils", "persons.snils2bcd64(r.snils)", EXPR_EQ)
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table mt").
+			WithField("mt.id, mt.surname, mt.name")
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data prd").
+			WithField("prd.id, prd.last_updated, prd.surname, prd.name, prd.full_name")
+
+		b.WithFrom("final_query fq").
+			WithField("fq.name, fq.snils, fq.last_updated") // no matching, apply filter
+
+		filter := map[string]string{
+			"search_snils": "123-456-789 33",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+
+			if after == "snils" {
+				b.ApplyFilter(after, "persons.snils2bcd64(?)", val)
+				continue
+			}
+
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq WHERE (persons.snils2bcd64(r.snils) = persons.snils2bcd64($1)) LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("query with expression into fieldconfig [ HAS ALIAS, HAS FIELD]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("snils", "persons.snils2bcd64(r.snils)", EXPR_EQ)
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table mt").
+			WithField("mt.id, mt.surname, mt.name")
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data prd").
+			WithField("prd.id, prd.last_updated, prd.surname, prd.name, prd.full_name, r.snils"). // HERE's MATCHING, apply filter
+			WithInnerJoin("persons.recipients r", "r.id = prd.id")
+
+		b.WithFrom("final_query fq").
+			WithField("fq.name, fq.snils, fq.last_updated")
+
+		filter := map[string]string{
+			"search_snils": "123-456-789 33",
+		}
+
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+
+			if after == "snils" {
+				b.ApplyFilter(after, "persons.snils2bcd64(?)", val)
+				continue
+			}
+
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "WHERE (persons.snils2bcd64(r.snils) = persons.snils2bcd64($1))")
+		assert.Len(t, args, 1)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("field config matches multiple field patterns in query [ WRONG MATCHING ]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("user_id", "u.user_id", EQ)
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table mt").
+			WithField("id, surname, name, full_name") // ID WITHOUT ALIAS, MATCHING IS HERE: apply filter
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data pd").
+			WithField("prd.id, prd.surname, prd.name, prd.full_name, user_id"). // user_id WITHOUT alias
+			WithInnerJoin("admin.users u", "u.id = prd.id")
+
+		b.WithFrom("final_query fq").WithField("fq.name, fq.snils, fq.last_updated, user_id")
+
+		filter := map[string]string{
+			"search_user_id": "344",
+		}
+
+		/* Here ApplyFilter add WHERE condition in main query, because not find contains field */
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "WHERE (u.user_id = $1)")
+		assert.Len(t, args, 1)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("field config matches multiple field patterns in query [ RIGHT MATCHING ]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("user_id", "fq.user_id", EQ)
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table mt").
+			WithField("mt.id, mt.surname, mt.name, mt.full_name") // with alias, no matching
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data pd").
+			WithField("prd.id, prd.surname, prd.name, prd.full_name, u.user_id"). // with alias, no matching
+			WithInnerJoin("admin.users u", "u.id = prd.id")
+
+		b.WithFrom("final_query fq").WithField("fq.name, fq.snils, fq.last_updated, fq.user_id") // here's matching: apply filter
+
+		filter := map[string]string{
+			"search_user_id": "344",
+		}
+
+		/* Here ApplyFilter add WHERE condition in main query, because not find contains field */
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq WHERE (fq.user_id = $1) LIMIT 7")
+		assert.Len(t, args, 1)
 	})
 }

@@ -3,7 +3,6 @@ package sqlist
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/Masterminds/squirrel"
@@ -96,9 +95,17 @@ func (b *SQLBuilder) ApplyFilter(field string, value string, args ...any) *SQLBu
 			continue
 		}
 
-		if slices.Contains(cte.fields, cfg.DBField) {
-			cte.pendingFilter = append(cte.pendingFilter, b.withPending(cfg.Operator, cfg.DBField, value, args...))
-			return b
+		// // это не будет работать, если поле обернуто выражением!
+		// if slices.Contains(cte.fields, cfg.DBField) {
+		// 	cte.pendingFilter = append(cte.pendingFilter, b.withPending(cfg.Operator, cfg.DBField, value, args...))
+		// 	return b
+		// }
+
+		for _, cteField := range cte.fields {
+			if strings.Contains(cfg.DBField, cteField) {
+				cte.pendingFilter = append(cte.pendingFilter, b.withPending(cfg.Operator, cfg.DBField, value, args...))
+				return b
+			}
 		}
 	}
 
