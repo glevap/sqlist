@@ -30,6 +30,7 @@ type (
 		joins         []joinConfig
 		placeholder   sq.PlaceholderFormat
 		fieldConfigs  map[string]FieldConfig
+		groupFields   string
 
 		// Состояние
 		pendingFilter []pendingFilter

@@ -1191,3 +1191,115 @@ func TestSortAndApplySortConflict(t *testing.T) {
 		assert.Contains(t, sql, "ORDER BY name DESC")
 	})
 }
+
+func TestGroupBy(t *testing.T) {
+	t.Run("simple group by", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("my_table mt").
+			WithField("id, max(updated_at) as last_updated").
+			WithGroup("mt.id")
+
+		sql, args, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "GROUP BY mt.id")
+		assert.Len(t, args, 0)
+	})
+
+	t.Run("simple group by with WHERE", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("my_table mt").
+			WithField("id, max(updated_at) as last_updated").
+			WithGroup("mt.id").
+			Where(EQ, "mt.id", 13)
+
+		sql, args, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "GROUP BY mt.id")
+		assert.Contains(t, sql, "WHERE (mt.id = $1)")
+		assert.Len(t, args, 1)
+		assert.Contains(t, args, 13)
+	})
+
+	t.Run("group by with multiple fields", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("orders o").
+			WithField("o.user_id, o.status, COUNT(*) as total").
+			WithGroup("o.user_id, o.status").
+			Sort("total", "DESC")
+
+		sql, args, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "GROUP BY o.user_id, o.status")
+		assert.Contains(t, sql, "ORDER BY total DESC")
+		assert.Empty(t, args)
+	})
+
+	t.Run("group by in CTE", func(t *testing.T) {
+		b := NewSQLBuilder()
+
+		cte := b.WithCTE("preload", "prd").
+			WithFrom("my_table mt").
+			WithField("id, max(updated_at) as last_updated").
+			WithGroup("mt.id").Where(EQ, "mt.id", 22)
+
+		sql, args, err := cte.buildCTEBaseSelect().ToSql()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "GROUP BY mt.id")
+		assert.Len(t, args, 1)
+		assert.Contains(t, args, 22)
+	})
+
+	t.Run("group by with empty string", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("my_table mt").
+			WithField("id, count(*)").
+			WithGroup("")
+
+		sql, _, err := b.BuildSelect()
+
+		// return SQL without GROUP BY
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "GROUP BY")
+	})
+
+	t.Run("group by without fields in SELECT", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("my_table mt").
+			WithGroup("mt.id")
+
+		sql, _, err := b.BuildSelect()
+
+		assert.ErrorContains(t, err, "select statements must have at least one result column")
+		assert.Empty(t, sql)
+	})
+
+	t.Run("group by with expression", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("orders").
+			WithField("date_trunc('month', created_at) as month, count(*)").
+			WithGroup("date_trunc('month', created_at)")
+
+		sql, _, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "GROUP BY date_trunc('month', created_at)")
+	})
+
+	t.Run("group by with invalid field", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("my_table mt").
+			WithField("id, count(*)").
+			WithGroup("non_existent_field")
+
+		sql, _, err := b.BuildSelect()
+
+		// Squirrel ошибку не вернёт — это ошибка выполнения
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "GROUP BY non_existent_field")
+		// Ошибка придёт от PostgreSQL: column "non_existent_field" does not exist
+	})
+}

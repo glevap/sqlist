@@ -24,6 +24,11 @@ func (b *SQLBuilder) buildBaseSelect() squirrel.SelectBuilder {
 		selectBuilder = selectBuilder.Where(squirrel.And(b.toSQLizer()))
 	}
 
+	// добавляем группировку
+	if b.groupFields != "" {
+		selectBuilder = selectBuilder.GroupBy(b.groupFields)
+	}
+
 	// если есть CTE, собираем по схеме Prefix().Suffix()
 	for i, cte := range b.cte {
 		if cte != nil {
@@ -68,6 +73,10 @@ func (b *SQLBuilder) buildCTEBaseSelect() squirrel.SelectBuilder {
 
 	if b.offset > 0 {
 		selectBuilder = selectBuilder.Offset(b.offset)
+	}
+
+	if b.groupFields != "" {
+		selectBuilder = selectBuilder.GroupBy(b.groupFields)
 	}
 
 	return selectBuilder

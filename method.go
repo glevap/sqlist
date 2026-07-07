@@ -360,3 +360,10 @@ func (b *SQLBuilder) Page(page, pageSize uint64) *SQLBuilder {
 	b.offset = (page - 1) * pageSize
 	return b
 }
+
+// GroupBy
+func (b *SQLBuilder) WithGroup(fields string) *SQLBuilder {
+	b.groupFields = fields
+
+	return b
+}
