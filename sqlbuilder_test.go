@@ -89,7 +89,7 @@ func TestJoinMethods(t *testing.T) {
 		assert.Len(t, b.joins, 1)
 		assert.Equal(t, "JOIN", b.joins[0].Type)
 		assert.Equal(t, "orders", b.joins[0].Table)
-		assert.Equal(t, "users.id = orders.user_id", b.joins[0].Condition)
+		assert.Equal(t, "ON users.id = orders.user_id", b.joins[0].Condition)
 	})
 
 	t.Run("left join", func(t *testing.T) {
@@ -138,6 +138,33 @@ func TestJoinMethods(t *testing.T) {
 		assert.Len(t, b.joins, 1)
 		assert.Equal(t, "CROSS JOIN", b.joins[0].Type)
 	})
+
+	// Join methods have been updated to allow the use of the USING operator in the WithJoin method.
+
+	t.Run("join clause with default ON clause", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users u").
+			WithField("u.id, u.test, orders.email").
+			WithFullJoin("orders", "u.id = orders.user_id")
+
+		sql, _, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "FULL JOIN orders ON u.id")
+	})
+
+	t.Run("join clause with default ON clause", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFrom("users u").
+			WithField("u.id, u.test, orders.email").
+			WithJoin("LEFT JOIN", "orders", "USING(id)")
+
+		sql, _, err := b.BuildSelect()
+
+		assert.NoError(t, err)
+		assert.Contains(t, sql, "LEFT JOIN orders USING(id)")
+	})
+
 }
 
 func TestWithFieldConfig(t *testing.T) {
@@ -1663,6 +1690,57 @@ func TestApplyFilterBehavior(t *testing.T) {
 			WithInnerJoin("admin.users u", "u.id = prd.id")
 
 		b.WithFrom("final_query fq").WithField("fq.name, fq.snils, fq.last_updated, fq.user_id") // here's matching: apply filter
+
+		filter := map[string]string{
+			"search_user_id": "344",
+		}
+
+		/* Here ApplyFilter add WHERE condition in main query, because not find contains field */
+		for key, val := range filter {
+			after, found := strings.CutPrefix(key, "search_")
+			if !found {
+				continue
+			}
+			b.ApplyFilter(after, val)
+		}
+
+		sql, args, err := cte1.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = cte2.buildCTEBaseSelect().PlaceholderFormat(Dollar).ToSql()
+
+		assert.NoError(t, err)
+		assert.NotContains(t, sql, "WHERE (")
+		assert.Len(t, args, 0)
+
+		sql, args, err = b.BuildSelect()
+
+		assert.NoError(t, err)
+		// there is no WHERE condition in main-sql
+		assert.Contains(t, sql, "FROM final_query fq WHERE (fq.user_id = $1) LIMIT 7")
+		assert.Len(t, args, 1)
+	})
+
+	t.Run("field config matches multiple field patterns in query [ CASE WHEN mathcing alias in AS position ]", func(t *testing.T) {
+		b := NewSQLBuilder().
+			WithFieldConfig("user_id", "fq.user_id", EQ)
+
+		cte1 := b.WithCTE("preload_data", "prd").
+			WithFrom("my_table mt").
+			WithField(`
+			mt.id, mt.surname, mt.name, mt.full_name
+			, case when 1 < 2 then 88 else 99 end as user_id
+		`) // with alias, no matching
+
+		cte2 := b.WithCTE("final_query", "fq").
+			WithFrom("preload_data pd").
+			WithField("prd.id, prd.surname, prd.name, prd.full_name, u.user_id"). // with alias, no matching
+			WithInnerJoin("admin.users u", "u.id = prd.id")
+
+		b.WithFrom("final_query fq").WithField("*") // here's matching: apply filter
 
 		filter := map[string]string{
 			"search_user_id": "344",

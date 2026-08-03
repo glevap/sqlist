@@ -14,8 +14,13 @@ func (b *SQLBuilder) buildBaseSelect() squirrel.SelectBuilder {
 	selectBuilder := squirrel.Select(b.fields...).From(b.fromTable)
 
 	for _, join := range b.joins {
+		/*
+			 * вынести в отдельлный метод
+			 * JoinClause нужен для нестандартов
+				* для всего остального есть .LeftJoin() или .Join()
+		*/
 		selectBuilder = selectBuilder.JoinClause(
-			fmt.Sprintf("%s %s ON %s", join.Type, join.Table, join.Condition),
+			fmt.Sprintf("%s %s %s", join.Type, join.Table, join.Condition),
 		)
 	}
 
@@ -55,7 +60,7 @@ func (b *SQLBuilder) buildCTEBaseSelect() squirrel.SelectBuilder {
 
 	for _, join := range b.joins {
 		selectBuilder = selectBuilder.JoinClause(
-			fmt.Sprintf("%s %s ON %s", join.Type, join.Table, join.Condition),
+			fmt.Sprintf("%s %s %s", join.Type, join.Table, join.Condition),
 		)
 	}
 

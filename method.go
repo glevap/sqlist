@@ -178,22 +178,22 @@ func (b *SQLBuilder) WithJoin(joinType, table, condition string, args ...interfa
 
 // WithLeftJoin добавляет LEFT JOIN
 func (b *SQLBuilder) WithLeftJoin(table, condition string, args ...interface{}) *SQLBuilder {
-	return b.WithJoin("LEFT JOIN", table, condition, args...)
+	return b.WithJoin("LEFT JOIN", table, "ON "+condition, args...)
 }
 
 // WithRightJoin добавляет RIGHT JOIN
 func (b *SQLBuilder) WithRightJoin(table, condition string, args ...interface{}) *SQLBuilder {
-	return b.WithJoin("RIGHT JOIN", table, condition, args...)
+	return b.WithJoin("RIGHT JOIN", table, "ON "+condition, args...)
 }
 
 // WithInnerJoin добавляет INNER JOIN
 func (b *SQLBuilder) WithInnerJoin(table, condition string, args ...interface{}) *SQLBuilder {
-	return b.WithJoin("JOIN", table, condition, args...)
+	return b.WithJoin("JOIN", table, "ON "+condition, args...)
 }
 
 // WithFullJoin добавляет FULL JOIN
 func (b *SQLBuilder) WithFullJoin(table, condition string, args ...interface{}) *SQLBuilder {
-	return b.WithJoin("FULL JOIN", table, condition, args...)
+	return b.WithJoin("FULL JOIN", table, "ON "+condition, args...)
 }
 
 // МЕТОДЫ ДЛЯ УСЛОВИЙ (ВСЕ ВОЗВРАЩАЮТ pendingFilter) =======================================
